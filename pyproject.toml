@@ -1,0 +1,15 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sample-task-manager"
+version = "0.1.0"
+description = "Sample CLI application for managing tasks"
+authors = [{ name = "Example Author", email = "author@example.com" }]
+readme = "README"
+requires-python = ">=3.10"
+dependencies = []
+
+[project.scripts]
+sample-tasks = "sample_app.cli:main"
