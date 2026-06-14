@@ -1,0 +1,1272 @@
+## Rolling Summary
+<!-- Auto-generated summary of recent sessions. Regenerated every ~10 sessions. -->
+<!-- Cold Start reads THIS section + the last 3 detailed entries below. -->
+<!-- This gives new sessions a fast skim of recent trajectory without reading 30 entries. -->
+
+**Sessions 1–17 (2026-04-18 → 2026-06-11), regenerated 2026-06-11:**
+
+The framework went through four eras. (1) **Dogfooding bootstrap** (sessions
+1–6): /healthcheck born and immediately used on itself; downstream (reqtool)
+patch-count became the real validation metric; framework-self redirect
+created so upstream dev state stops leaking to consumers; /wrapup shipped.
+(2) **The restructure** (sessions 7–10): 00_framework/ → .claude/framework/,
+state files → .claude/, migrate-layout.sh + manifest-driven apply-update
+for consumers — all contract-first (framework-layout, state-file-paths,
+migration-behavior). (3) **Hardening + research sweeps** (sessions 11–15):
+BUG-001 (review-findings anchoring → rotation + subagent independence rule)
+is the load-bearing lesson — determinism-before-automation is now doctrine
+(--verify/--perturb/--pin). Three research passes were mined mechanism-only:
+bats+shellcheck harness (TASK-014, has now caught 3+ real shipped bugs —
+highest-ROI artefact), fault-injection + golden fixtures (018/019),
+config-security auditor (009), hook profiles (011), instinct miner
+(010/016, propose-only). Recurring through-line: take the mechanism,
+reject the dependency/control-plane; classifier-blocked settings edits are
+parked, never worked around (TASK-008/026 precedent — 026 later landed on
+named approval). (4) **Simplification** (sessions 16–17): multi-project
+mode removed entirely (zero adopters; supersedes 2026-04-18 decision);
+@CLAUDE.framework.md import fixed the rulebook never being auto-loaded
+(doctor-as-propagation-channel for project-owned config); spec doc cut
+2,151 → 418 lines; ECOSYSTEM/GOTCHAS/SUGGESTIONS joined the self-mode
+redirect so consumers start with clean templates. Board now: TASK-021
+(telemetry span schema) and TASK-022 (context-bundle assembler) in Todo,
+both deliberately filed-not-rushed.
+
+---
+
+## Session Log
+<!-- Newest sessions at the top. -->
+
+### 2026-06-12 (session 21, part 2) — TASK-044: skills tier hardening, both repos
+
+User direction: audit the skills repo, make its README framework-legible,
+solve cross-references + non-adopter discovery + upstream-update handling
++ consumed-feedback cleanup; push both repos.
+
+Skills repo (CCMAF---Skills): 29 skills audited — all clean (names match
+dirs, descriptions ≤771 chars, no CRLF, reference indexes complete,
+cross-refs all resolve; 4 apparent danglers were attributions). Committed
+the 19 untracked skills + README (new "Framework integration (CCMAF)"
+section = the consumption contract: dir name is identity/selection token,
+naming convention, SKILL.md frontmatter rules, cross-refs-are-advisory,
+every-main-commit-is-a-release, LF/no-hidden-chars) + .gitattributes.
+
+Framework (TASK-044, contract extended first):
+- skills-check.sh non-adopter discovery: stack-detected, 7-day-throttled
+  .skills-suggestion.md; permanent opt-out = committed .skills-declined;
+  cold-start step 1 wording. Fixed pre-existing gap: init-framework-version
+  ephemera list was missing the TASK-043 update flag too.
+- skills-sync.sh: full --suggest map (bash/powershell/godot/unity/unreal/
+  azure/devops/power-bi/copilot-studio/dynamics/threejs; cross-cutting
+  mentioned, never claimed) + companion advisory (greps synced skills for
+  catalogue-validated sibling names not in SKILLS_SELECTED).
+- Consumed-feedback channel: framework/docs/ADOPTED-FEEDBACK.md registry
+  (manifest-shipped, seeded with session-20 fleet-sweep adoptions);
+  /housekeeping "Adopted-feedback reconciliation" step; doctor Check 12
+  WARNINGs on pre-TASK-027 leaked upstream dev entries in consumer state
+  files (fingerprint titles).
+- READMEs: framework README gained skills section, /fleet+/security rows,
+  doctor 12-checks, fleet/tests rows, stale project/ removed; doctor README
+  gained missing rows 11+12.
+Suite 131 → 141 (10 new bats), doctor/pattern-scan/config-security clean.
+
+Skill-gap recommendations reported to user (not built): sql-development,
+llm-development (agent/Claude-API engineering), containers-development.
+
+### 2026-06-12 (session 21) — TASK-021: telemetry schema v2 (OTel-shaped, zero OTel)
+
+Cold start: self-mode update flag was the repo seeing its own commits —
+pin bumped to HEAD (160db8e), flag cleared. Insights/doctor/skills clean.
+
+TASK-021 shipped pipeline-wide, contract first (contract:telemetry-schema,
+status:stable, in self/ECOSYSTEM.md):
+- Correlation model: session (session_id = trace root) → task (RESERVED) →
+  agent handoff (RESERVED, no subagent marker in payloads) → tool call
+  (tool_use_id, fail-soft). event_id on every line = TASK-015 replay anchor.
+- telemetry_emit() in hook-common.sh; all 8 emitters migrated (dispatcher
+  exports CLAUDE_HOOK_SESSION_ID/TOOL_USE_ID for the post-edit trio; each
+  standalone path extracts ids in its EXISTING jq spawn — no new processes).
+  Python guard builds the shape natively. outcome_class (ok|flagged|
+  blocked|skipped) emitted at source; per-hook outcomes unchanged (v1
+  back-compat absolute — v1 lines valid forever, legacy mapping only in
+  rollup's classof).
+- Readers: rollup gains sessions/schema_mix/by_session; analyse gains
+  stop-block session-concentration finding (new thresholds INSIGHTS_MIN_
+  SESSIONS=5, STOP_BLOCK_SESSION_RATE_HIGH=0.50) + sessions in header;
+  session-summary windows by session_id (mid-session Stop no longer
+  splits), marker heuristic kept as v1 fallback.
+
+LIVE-FIRE CATCH: the hooks ran the new code during this very session —
+first v2 lines arrived corrupt (raw \r inside session_id). Root cause
+(verified empirically in the bug-sweep follow-up): the winget jq (the
+machine's ONLY jq) emits CRLF on every line; MSYS bash $() strips the
+trailing \r (all pre-existing $(jq -r) consumers were always fine), but
+read < <(jq -r) keeps it — the new multi-value read extraction
+re-exposed what $() had been hiding. CR-strips at every jq-fed read site
++ the emit choke point. CORRECTION vs this entry's first version: the
+old stop_hook_active $() comparison was NEVER latent-broken. Second
+catch: rollup's jq -s aborted on one malformed line → line-tolerant
+fromjson? (TASK-034's lesson). GOTCHAS entry added (jq CRLF, enc: 2).
+
+BUG-SWEEP follow-up (user: "fix all bugs"): swept the whole repo for
+both classes. read/mapfile-fed-by-jq sites: only today's five (all
+stripped) + config-security's jq -c loop (safe — \r lands as trailing
+JSON whitespace, inner $() re-strips). mapfile sites consume MSYS tools
+(no CRLF). jq -s sites: only config-security's internal one (safe,
+in-process input). One hardening: verify-deps get_added_lines now
+tr -d '\r' (CRLF manifests leaked cosmetic \r into findings text).
+GOTCHAS/DECISIONS/TASKS corrected with the verified mechanism.
+
+Verified: suite 131/131 (+7 bats incl. strict-parse CRLF pin), doctor,
+pattern-scan, config-security clean; live run on 3,098 real events
+(session-summary correctly windowed 30 in-flight events; prev session
+385 tool calls).
+
+**Next session should:** TASK-022 (context-bundle architect pass, incl.
+AC5 state-file serialisation; note v2's reserved task_id/agent_id levels
+as a composition point), OR consumer work — dogfood skills-sync on a
+consumer (.claude/.skills-version, SKILLS_SELECTED="python-development")
+and nudge the /fleet-flagged stale projects (babynamey, claude-usage-tray
+PRE-migration; harvey, prompt-picker old pins) to pull.
+
+### 2026-06-12 (session 20, part 5) — Two new features: /fleet + skills-check
+
+After the push, built the two features flagged in the pre-push review:
+- TASK-043 (60eca69) skills-check.sh — cold-start notice when a project's
+  pinned skills SHA lags the catalogue. Mirrors check-updates.sh (throttle
+  + DA-C4 flag discipline); contract:skills-sync extended; wired into
+  CLAUDE.framework.md step 1; 7 bats.
+- TASK-042 (e99097f) /fleet — read-only sweep over sibling repos tabling
+  pinned SHA / layout era / skills opt-in / dirty / (--check-remote)
+  freshness. Designed read-only (dropped the planned doctor-count column —
+  running consumer doctor writes their flag, violates AC2). 7 bats incl.
+  no-mutation invariant. Live run flagged babynamey + claude-usage-tray
+  PRE-migration and harvey/prompt-picker on older pins — immediate value.
+Suite 110 → 124. doctor + pattern-scan clean. Pushed (2790903) — origin
+fully in sync at session end. DECISIONS.md gained the skills-architecture
+entry at wrapup. Contract changes this part: contract:skills-sync
+extended (skills-check fields/interface).
+
+**Next session should:** TASK-021 (span schema; possibly own session) or
+TASK-022 (context-bundle + AC5), OR consumer work — dogfood skills-sync
+on a consumer and nudge the /fleet-flagged stale projects (babynamey,
+claude-usage-tray, harvey, prompt-picker) to pull. D365 skill = next
+cowork item (D365-Development-Toolkit GOTCHAS is the source).
+
+### 2026-06-12 (session 20, part 4) — Pre-push /healthcheck: 2 findings fixed
+
+Single-pass healthcheck before pushing the 18-commit day. Parts 2/3/5
+auto-skip (framework-only repo). Doctor clean; insights flagged the
+expected drift-rate dogfooding noise (dismissed). Deep reviewer audit
+of the changed files found two real issues, both fixed (35c5d32):
+- CONFLICT: TASK-038 added behavioral-principles §7 (subagent RED-LINES)
+  but wired only developer.md — tester.md ("commit test files" +
+  move-to-Done) and architect.md still contradicted it. Both now carry
+  the RED-LINES paragraph. GOTCHA logged: sweep cross-cutting agent
+  constraints across all 4 defs.
+- STALE: ECOSYSTEM layout tree missing post-edit-dispatch.sh /
+  push-state.sh / session-summary.sh — added.
+Also corrected review-findings tracking (git mv had carried the tracked
+flat file into the gitignored archive — 9cbbe6c) and logged a P3
+suggestion to fix Part 0.0 rotation to use plain mv. Audit verified
+clean: skills/ tracks only .gitkeep, reviewer Write-less + PERSIST path
+consistent, council exclude-self consistent across 6 files. Suite
+110/110. Pushed after.
+
+### 2026-06-12 (session 20, part 3) — Fleet sweep → TASK-037..041 batch; skills catalogue live
+
+**Skills repo:** committed + pushed 10 skills to CCMAF---Skills
+(11940f4); --suggest now maps stacks to the real <stack>-development
+names incl. react/electron via package.json deps, android via gradle,
+ios via xcodeproj (a39159d). User is adding bash + more skills via
+cowork.
+
+**Fleet sweep** (Explore agent over 31 GOTCHAS/FRAMEWORK-SUGGESTIONS
+files in 15 projects): most complaints were already fixed upstream —
+the real story is STALE CONSUMERS (~10 projects still on pre-migration
+layouts; nudge them to pull). Skill gaps found: D365/PowerPlatform is
+the #1 missing skill (58-entry GOTCHAS in D365-Development-Toolkit is
+ready-made source); bash-on-Windows-git-bash portability validated as
+the bash skill's core angle; powershell + azure-deployment candidates.
+
+**TASK-037..041 implemented same session** (user: "do all the updates"):
+- 037 (296809b) reviewer/tester findings persistence — tester writes
+  test-findings.md itself; reviewer stays Write-less, /review step 5
+  persistence mandatory + PERSIST: trailer.
+- 038 (07660ae) behavioral-principles §7 subagent RED-LINES (no
+  commit/push/lifecycle without by-name grant) + reviewer check 6b.
+  Hook enforcement deferred (no subagent marker in hook payloads).
+- 039 (9557d81) apply-update command-collision notice — pinned-version
+  comparison so stock-evolving files stay silent; customised files
+  named loudly with recovery hint.
+- 040 (2be7ede) insights/push-state.sh computed push state; /wrapup
+  reports it; STATUS prose forbidden.
+- 041 (e9db2d7) council Mode-2 exclude-self Strongest (all 5 advisors +
+  command) + chairman re-weighting (blind-spots > strongest votes).
+- TASK-022 gained AC5 (parallel-subagent state-file serialisation).
+
+**Tests:** 110/110; doctor/pattern-scan/config-security clean.
+**Contract changes:** none this part (skills-sync contract was part 2).
+
+**Next session should:** TASK-021 or TASK-022 (full ACs on board), OR
+consumer work: prompt consumers to pull (the fleet's complaints are
+mostly already fixed); reqtool + Mission-Control get the TASK-039
+collision notice on their next update. D365 skill consolidation is the
+user's next high-value cowork item.
+
+### 2026-06-12 (session 20, part 2) — TASK-036 skills-repo sync built same-day
+
+User delivered the skills repo (git@github.com:drushegh/CCMAF---Skills.git,
+local F:\Git\Personal\CCMAF---Skills, LICENSE-only; python skill incoming).
+Built the full plumbing immediately since the bats tier is offline anyway
+(32778d7): **contract:skills-sync FIRST** in ECOSYSTEM (third ownership
+domain — SKILLS_SELECTED dirs are skills-repo-owned, other .claude/skills/
+dirs consumer-local, apply-update never touches skills), then
+update/skills-sync.sh (.skills-version pin+selection; per-skill dirty
+rules: tracked→porcelain, untracked-previous-sync→byte-identical-or-refuse;
+missing config prints the setup template = init path), --suggest stack
+detection wired into init.sh gated on .skills-version (no nag for
+non-adopters), 11 bats cases incl. empty-upstream skip + traversal-name
+rejection. Live smoke vs the real repo: graceful skip, exit 0.
+Suite 95 → 106 green.
+
+**Next session should:** when the python skill lands in CCMAF---Skills,
+run a real end-to-end sync + dogfood on a consumer (create
+.claude/.skills-version with SKILLS_SELECTED="python" there). Otherwise
+TASK-021/022 remain the queued board items.
+
+### 2026-06-12 (session 20) — TASK-032..035 all developed and Done; BUG-002
+
+The four brainstorm tasks landed in board order, each in its own scoped
+commit with regression tests:
+
+**TASK-032 (7851515)** — update-system bats tier: 25 offline tests over
+apply-update / check-updates / migrate-layout / doctor via synthetic
+local-path upstream+consumer git repos (update_helpers.bash). Staging
+failure simulated via PATH-shadowed cp (the planned unwritable-dir
+pre-create is impossible — staging path embeds $$ — and chmod is a no-op
+on Windows git-bash). **Found BUG-002:** migrate-layout's dirty-tree
+refusal NEVER fired (porcelain grep expected the path at position 3,
+which is always a space). Fixed same commit; regression test verified
+to fail against the unfixed script.
+
+**TASK-033 (01a3140)** — instinct-miner precision. AC0 schema
+characterisation (documented in script header): user-type entries =
+tool results (toolUseResult) / harness meta (isMeta — hook feedback +
+skill expansions = THE noise source) / sidechains (isSidechain) /
+genuine human turns; promptSource rejected (version-dependent).
+Three-level filter (entry / tag-prefixed text item / system-reminder
+ranges + fenced blocks). Acceptance: observed noise transcript 34→0
+candidates; 23b5fe94 15→15 all genuinely user-sent (unfenced pastes =
+documented limitation). Fixture test: 2 corrections in 6 noise classes
+→ exactly 2 mined.
+
+**TASK-034 (57c73b5)** — /wrapup "Session efficacy" line.
+insights/session-summary.sh: window = events after last cost-tracker
+marker; fail-soft (never blocks wrapup); ALL jq isolated in
+mine_window_counts() → TASK-021's first consumer is a one-function
+migration. Wired into /wrapup final verdict. 3 bats cases.
+
+**TASK-035 (057659d + f302ddd)** — post-edit dispatcher. Chose env-vars
+over sourceable-function refactor (hooks stay intact + independently
+testable; legacy 3-entry settings keep working). Measured: git spawns
+3→1, ~1300ms→~890ms per edit. settings.json collapse landed on named
+approval ("Yes — collapse to dispatcher"); doctor Check 1 taught
+indirect hook wiring so dispatcher children aren't flagged dead
+(consumers adopting it get the same pass; true orphans still flagged).
+
+**Tests:** suite grew 59 → 95, all green. Doctor clean, pattern-scan
+clean, config-security 0 CRITICAL. **Contract changes:** none.
+
+**Next session should:** pick TASK-021 (span schema; pipeline-wide,
+possibly own session) or TASK-022 (context-bundle architect pass) —
+the only Todo items left. Pending user actions unchanged: delete
+remote assets branch (GitHub UI); downstream consumer prompt
+(session-17 entry). Consumers will see a doctor WARNING nudging
+dispatcher adoption after their next framework update — that is the
+designed propagation path, not a bug report.
+
+### 2026-06-12 (session 19, part 2) — Brainstorm: TASK-032..035 filed; backlog parked
+
+**Brainstorm held** (the round promised after the DA fixes): 10 items
+pitched, user chose 4 — filed with full ACs at the top of Todo:
+- TASK-032 update-system test tier (apply-update/check-updates/
+  migrate-layout/doctor — zero coverage today; local-dir-upstream fixture
+  makes it offline-testable)
+- TASK-033 instinct-miner precision (observed 33/34 noise rate two
+  sessions running — mines runbook text as user corrections)
+- TASK-034 /wrapup session efficacy line (telemetry read-back; deliberate
+  cheap subset of TASK-021)
+- TASK-035 post-edit hook dispatcher (5-7 git spawns per edit → ≤2;
+  settings.json collapse needs named approval)
+Unchosen 6 (incl. /fleet — top leverage pick — and /publish-prep) parked
+in FRAMEWORK-SUGGESTIONS [2026-06-12] with rationale.
+
+**Also shipped:** .gitattributes added to framework-manifest.txt — the
+CRLF root fix (DA-C7) now actually propagates to consumers; it was
+upstream-only before. Doctor clean.
+
+**Contract changes:** none. **Tests:** no code changed beyond the
+manifest line; suite green as of 28c184a.
+
+**Next session should:** develop TASK-032..035 in board order
+(032 → 033 → 034 → 035; do 035 last — its refactor touches hooks that
+032's tests will pin first). 033 starts at AC0 (characterise transcript
+schema). 035 AC4 needs named settings.json approval. Pending user
+actions: delete remote assets branch; downstream consumer prompt
+(session-17 entry).
+
+### 2026-06-12 (session 19) — TASK-031: DA round fully closed (12 MEDIUM + 4 LOW)
+
+**TASK-031 (28c184a):** every actionable MEDIUM/LOW from the deep
+analysis fixed — healthcheck runbook coherence (renumber, Part-5
+sequencing, --verify anchoring honesty, Part 1.3 now passes detected
+shape), housekeeping archive paths, command stubs → CLAUDE.framework.md,
+statusline on the uniform registration pattern, apply-update
+upstream-manifest warning, fresh-consumer gitignore covers all ephemera,
+instinct-miner refuses ambiguous transcript matches, bats pinned 1.13.0,
+scanners cover skills/, dead .last-security touch dropped, drift-guard
+extracts healthcheck.conf vars instead of sourcing (injection canary
+verified), guard echo truncated, plus 4 LOW wording/comment fixes.
+Deferred: L4 (historical), L6 (consumer-name sweep → go-public
+checklist). Verified: 59/59 bats, doctor clean, pattern-scan clean,
+config-security baseline unchanged.
+
+**The full deep-analysis arc (sessions 17-19):** 35 findings → TASK-028
+(8 CRITICAL) → TASK-029 (8 HIGH) → TASK-031 (12 MEDIUM + 4 LOW) — all
+fixed within ~24h of the audit, each tier in scoped commits with
+regression tests where behaviour changed.
+
+**Next session should:** hold the user's improvements/new-features
+brainstorm (they asked for it after the fixes round). Then TASK-021
+(telemetry span schema) or TASK-022 (context-bundle architect pass) are
+the queued board items. Pending user actions: delete remote assets
+branch; downstream consumer prompt (session-17 entry) once consumers
+update.
+
+### 2026-06-11 (session 18) — README assets pushed + TASK-029: all 8 DA HIGH findings fixed
+
+**README images:** user added an illustrated README (4e418b1) + orphan
+`assets` branch (6 webp) in another session; both pushed. Caveat
+discovered: the repo is PRIVATE, so raw.githubusercontent URLs 404 and
+GitHub's camo proxy won't render them — they light up when the repo goes
+public (user's call; alternative of in-branch images was deliberately
+rejected to keep clones lean).
+
+**TASK-029 (a2ad224):** all 8 HIGH findings from the deep analysis fixed —
+normalize_tool_path() shared Windows-path fix (verify-deps was a silent
+no-op on Windows), council §6 + chairman path constraint, enforcement-claim
+wording, v4-guide contracts path, git add -A → enumerated paths
+(wrapup/migrate-layout/MIGRATION), atomic .drift-state, enforce-state
+anchored matching + verify-deps pipefail guard, doctor portable
+mtime/mktemp. 6 new tests (59/59 pass), doctor/pattern-scan/config-security
+clean. DA-M10 folded in.
+
+**Gotcha re-encountered:** `git checkout -- .` while refreshing CRLF
+working copies reverted an uncommitted TASKS.md edit — state-file edits
+should be committed before any tree-wide checkout.
+
+**TASK-030 addendum (a898171):** README images now render in the private
+repo — 6 webp moved into .github/assets/ on main with relative paths (the
+only form GitHub serves authenticated on private repos). Supersedes the
+orphan assets branch; its remote deletion was classifier-blocked
+(destructive remote op not named by user) — user deletes via GitHub UI or
+gives named approval. The earlier "works when public" raw-URL note is moot.
+
+**Next session should:** triage the 13 MEDIUM / 6 LOW DA findings
+(review-findings.md; DA-M10 done) — recommend fixing M1-M3/M5-M9/M11-M12
+and wontfixing/deferring the rest — then run the user's improvements and
+new-features brainstorm. Downstream consumer prompt (stray root
+framework-metrics.md) still queued in session-17 entry. Also: assets
+branch deletion pending user action.
+
+### 2026-06-11 (session 17, part 2) — Deep analysis: 35 findings, all 8 CRITICALs fixed
+
+**Deep analysis** (user-requested): five parallel audit agents over hooks /
+machinery / runbooks / agents+security / tests+cross-platform produced 8
+CRITICAL, 8 HIGH, 13 MEDIUM, 6 LOW (checkpointed 58e9d04, full text in
+review-findings.md). Two findings demonstrated themselves live: the
+dangerous-command regex blocked the findings file being written (its text
+contains rm -rf / examples — the false-positive class), and check-updates'
+flag-before-throttle deletion was the morning's observed flag loss.
+
+**All criticals fixed same session** (user: "fix all critical now" — named
+authorisation covering the two settings.json items):
+- 4312933 DA-C1/C2/C6 — python3-first guard dispatch; rm detection
+  rewritten as per-segment tokenizer (8 new bats cases); ssh/aws deny
+  rules extended to Edit/Write + tilde-independent globs. Rejected:
+  denying settings.json self-edits (severs doctor propagation).
+- f504ade DA-C3/C4/C5/C8 — apply-update stage-then-swap (tree untouched
+  until staging succeeds); check-updates flag lifecycle fixed; scrape awk
+  blank-line undercount fixed (telemetry deltas were systematically low);
+  bash>=4 guards + doctor Check 11 (GNU toolchain). Bonus: zero-width
+  detector used grep -P which git-bash ALSO lacks — dead on the primary
+  platform since shipping; rewritten as byte-level LC_ALL=C match with
+  leading-BOM exception.
+- 63c765a DA-C7 — .gitattributes pins LF for machine-parsed types (root
+  fix for the CRLF class); working copies refreshed.
+
+Verified end-to-end: 53/53 bats, doctor clean, config-security baseline
+unchanged, pattern-scan clean. HIGH and below await the improvements round.
+
+**Lesson:** a capability probe in doctor (Check 11) instantly found that a
+"macOS-only" gap was live on Windows git-bash too — environment checks
+beat platform assumptions.
+
+**Next session should:** run the DA improvements round — fix the 8 HIGH
+findings in `.claude/review-findings.md` ("Deep Framework Analysis"
+section, DA-H1..DA-H8; start with DA-H1, verify-deps' Windows-backslash
+no-op, fixing path normalisation in hook-common.sh and sharing it), then
+triage the 13 MEDIUM / 6 LOW, then hold the user's improvements/new-features
+brainstorm. Contract changes this session: none (settings.json and script
+changes are within existing contracts). After the push reaches consumers,
+hand the user this downstream prompt:
+
+  The upstream framework fixed a bug where insights/update-metrics.sh wrote
+  framework-metrics.md to the project ROOT instead of .claude/. After
+  pulling the framework update: if a framework-metrics.md exists at your
+  project root, merge anything useful into .claude/framework-metrics.md
+  and delete the root copy.
+
+### 2026-06-11 (session 17) — Cold start: pull e4e80e9 + /healthcheck audit, all findings fixed
+
+**Goal:** Cold start on this clone (which was 5 commits behind origin after
+the session-16 work was pushed elsewhere); the 29-day healthcheck nudge fired
+and the user chose to run it.
+
+**Update:** `git pull --ff-only` f624e44 → e4e80e9 (TASK-023..027 landed);
+`.framework-version` pin bumped to match (check-updates would have re-flagged
+the already-applied update on the next un-throttled run).
+
+**/healthcheck (Parts 1/3/4; 2/5 skipped — no project code):** doctor and
+insights clean. Findings → fixes, all same-session, three scoped commits:
+- **b282424** checkpoint (findings file + pin bump).
+- **e952fe6** BROKEN: update-metrics.sh consumer branch wrote
+  framework-metrics.md to PROJECT ROOT instead of .claude/ (latent since the
+  restructure — self-mode masked it upstream; new insights_behavior.bats
+  2/2 covers both branches); 3 shipped templates pointed archives at retired
+  00_framework/; security.md still probed the removed single-vs-multi mode.
+- **7ddbee1** contract catch-up: framework-layout gained instinct-miner.sh,
+  docs/plans/, telemetry throttle/cursor files, skills/, test-findings.md,
+  claude-code-dev-framework.md, review-findings/ rotation dir; review-findings.md
+  marked TRANSIENT in both contracts + module-boundaries rows added.
+- State files: two header-less DECISIONS entries (TASK-023 removal, third
+  research sweep) were invisible to the cold-start top-10 heading scan —
+  headers added; 2026-04-24 heading copy-paste corruption fixed;
+  framework-metrics divergence merged (self/ gained the TASK-008/012
+  defect-escape table + tool-calls column that had been written to the root
+  template); STATUS test-status section rewritten for the bats-harness era;
+  TASK-025 struck from Next Up; all `(this session)` commit placeholders in
+  TASKS/STATUS replaced with real SHAs; this Rolling Summary generated
+  (was two cycles overdue).
+
+**Lesson:** "Commit: (this session)" placeholders silently rot — the session
+that writes them never comes back to fill them in. Write the SHA at commit
+time or immediately after.
+
+### 2026-06-10 (session 16, part 2) — External-audit quick-fix bundle (TASK-024)
+
+**Goal:** Ship the 6 quick wins from the 2026-06-10 external audit before
+pushing, alongside TASK-023. Both platform-behaviour claims were verified
+against code.claude.com docs first.
+
+**Changes:**
+1. @import fix — CLAUDE.md template now `@CLAUDE.framework.md` (auto-load
+   of CLAUDE*.md was a myth; links aren't followed; the rulebook only
+   reached sessions if the model volunteered). doctor Check 3 upgraded to
+   demand the @import (CRITICAL) — that's how the 8 existing consumers
+   find out, since their CLAUDE.md is project-owned. False claims fixed
+   in CLAUDE.md comment + ECOSYSTEM layout contract.
+2. statusline — new hooks/statusline.sh stdin reader (ctx% | model |
+   branch); settings.json rewired; manifest ships it; doctor Check 10
+   flags the dead $CLAUDE_STATUS_JSON pattern downstream; Check 1 now
+   also reads statusLine.command (no dead-code false positive).
+3. filter-test-output — runner match un-anchored ((^|&&|;) + boundary),
+   runner set now npm/pytest/go/dotnet/cargo. The documented
+   `cd 01_Project && npm test` form had NEVER matched.
+4. enforce-state-update — stop_hook_active → yield (no re-block loop).
+5. drift-guard — per-session counter reset via payload session_id
+   (counters were lifetime; nudge text was false); Indicator 3 counts
+   entries under '### In Progress' (heading self-match meant it never
+   fired — closes the Known Issues entry).
+6. Hygiene — deep-research-report.md → framework/docs/; ECOSYSTEM tree
+   updated (+council agents, council/security cmds, statusline/verify-deps/
+   lib hooks, config-security, tests/); stale 00_framework path in
+   ECOSYSTEM comment fixed; doctor README rows 3/9/10; STATUS Next Up
+   stale items cleared. TASK-025 (spec-doc reconciliation) FILED.
+
+**Tests status:** +8 bats regression cases (filter ×3, enforce-state ×2,
+drift-guard ×3); full suite + doctor + pattern-scan + config-security run
+clean pre-commit (results in TASK-024 entry).
+
+**Contract changes:** contract:framework-layout — corrected the auto-load
+claim (now documents the @import mechanism) + tree additions. Cosmetic.
+
+**Decisions made:** DECISIONS 2026-06-10 (TASK-024) — @import switch and
+the "doctor as propagation channel for project-owned config" principle.
+
+**Next session should:** see the session-16 part-3 entry above.
+
+### 2026-06-10 (session 16, part 5) — TASK-026 landed on named authorisation
+
+User gave the named approval ("you have permission to do task 026").
+All four remaining hook commands migrated to the uniform
+`bash -c 'cd "$CLAUDE_PROJECT_DIR" && …'` pattern — all 7 registered
+hooks now share one invocation shape. Verified: valid JSON, jq confirms
+all 7 on the new pattern, doctor clean, config-security 0 CRITICAL.
+Board is now clear except TASK-021/022 (Todo) and the reqtool
+healthcheck rebaseline.
+
+**Next session should:** pick TASK-021 (telemetry span schema — pipeline-
+wide, own session) or TASK-022 (context-bundle assembler — architect pass
+first), or run the reqtool healthcheck rebaseline (3 fresh sessions, no
+priming language).
+
+### 2026-06-10 (session 16, part 4) — "Proceed with everything": TASK-027 shipped, TASK-026 blocked again, CLAUDE.framework.md move rejected
+
+**Goal:** User returned and said "proceed with everything."
+
+**TASK-027 (consumer clean templates) — DONE:** executed via the contracted
+path: contract:state-file-paths updated FIRST (redirect set 5 → 8), then
+CLAUDE.framework.md step-0 list + self/README + instinct-miner.sh path
+logic widened, then root ECOSYSTEM/GOTCHAS/FRAMEWORK-SUGGESTIONS reset to
+clean templates with upstream content moved to framework/self/ (each with
+a moved-here header). Template hardening: ECOSYSTEM examples now
+status:draft (developer refuses leftovers). v4 guide §11 pointer updated.
+Supersedes the same-day no-build decision (user has now decided).
+
+**TASK-026 — STILL BLOCKED:** re-attempted under the blanket authorisation;
+classifier ruled "proceed with everything" is not a NAMED approval for
+hook-config self-modification. Not worked around. Blocked entry updated
+with the exact wording that would unblock it.
+
+**CLAUDE.framework.md move under .claude/ — REJECTED (decision logged):**
+circular failure — a consumer with the old import path loads no rules,
+so no cold start, so no doctor, so nobody is told about the fix. Needs a
+shim-based transition design if ever wanted.
+
+**Next session should:** if the user wants TASK-026, apply the four
+settings.json command strings (in the Blocked entry) manually or give a
+named authorisation. Otherwise: TASK-021 (telemetry span schema,
+pipeline-wide, own session) and TASK-022 (context-bundle assembler,
+architect pass first) are the open backlog, plus the reqtool healthcheck
+rebaseline (needs fresh interactive sessions).
+
+### 2026-06-10 (session 16, part 3) — Autonomous stretch: TASK-025 shipped, TASK-026 parked, leak question resolved as no-build
+
+**Goal:** User left with "proceed with the rest of your suggestions."
+Remaining items executed with judgment calls documented.
+
+**TASK-025 (spec-doc rewrite) — DONE:** claude-code-dev-framework.md
+v3 → v4, 2,151 → 418 lines, shrink-to-concepts. Cold start NOT
+duplicated (defers to CLAUDE.framework.md); machinery defers to
+component READMEs with a stated precedence rule; setup rebuilt as
+Scenario A/B on the update-system flow; upgrade-by-diff gone; stale
+platform claims removed; README Getting Started prompt updated to the
+new path + Section 12 language; verify-deps row added to README hooks
+table. Verified: doctor clean, pattern-scan clean, AC3 grep clean.
+
+**TASK-026 (settings hook-pattern uniformity) — PARKED/Blocked:**
+auto-classifier denied the settings.json edit as self-modification
+(general autonomy grant ≠ explicit approval). Followed the TASK-008
+precedent: no workaround, partial edit reverted via git restore,
+exact change documented in the Blocked entry. Needs one explicit
+user authorisation to apply (4 command strings).
+
+**Consumer-leak question — NO-BUILD:** investigation found
+contract:state-file-paths (stable) explicitly declares ECOSYSTEM/
+GOTCHAS/FRAMEWORK-SUGGESTIONS project-wide regardless of self mode —
+the inheritance is contracted-deliberate. Changing it would break a
+stable contract with the decision-maker away; evidence + options left
+in STATUS Next Up #3 and a DECISIONS no-build entry.
+
+**Next session should:** with the user present: (1) approve or decline
+TASK-026 (one settings.json edit, strings in the Blocked entry);
+(2) decide STATUS Next Up #3 (consumer-leak: keep contracted behaviour
+or switch to clean templates — contract update first if so);
+(3) optionally consider moving CLAUDE.framework.md under .claude/
+(@import now unblocks it — but it breaks consumer CLAUDE.md import
+paths, so it needs the doctor-as-messenger treatment; deliberate
+session). TASK-021/022 remain in Todo. All consumers pick up
+TASK-023/024/025 via check-updates on their next cold start; their
+doctors will flag the @import + statusline fixes for their local
+CLAUDE.md/settings.json.
+
+### 2026-06-10 (session 16) — Multi-project mode removed (TASK-023)
+
+**Goal:** User decided from practical usage that one framework clone per
+project beats one instance hosting many. Strip multi-project mode entirely.
+Fleet check first (all 8 consumers: AutoBattle, harvey, prompt-picker, pulse,
+babynamey, CEA-Demo-Portal, CharitiesRegDemo, requirements-toolkit): zero
+have projects/ or FRAMEWORK_MODE=multi → cheap-path removal, no migration
+tooling needed.
+
+**Changes:**
+- DELETED `.claude/framework/project/` (7 files) + `.claude/commands/framework-mode.md`.
+- Manifest: both entries removed — consumer copies self-delete on next
+  apply-update ("(removed upstream)" path; verified the mechanism in code).
+- CLAUDE.framework.md Cold Start step 0 → framework-self mode only.
+- doctor.sh Check 6 retired (tombstone comment preserves numbering),
+  registration removed; doctor README table updated.
+- init-framework-version.sh: FRAMEWORK_MODE field no longer written;
+  leftover lines in consumer .framework-version files are inert.
+- healthcheck.md Part 0.1 (mode) removed, 0.2/0.3 → 0.1/0.2 (+ cross-ref).
+- README.md: section + 2 table rows removed. ECOSYSTEM.md framework-layout
+  contract: framework-mode.md + project/ removed from canonical tree.
+- .gitignore: projects/*/ block removed. MIGRATION.md: removal section added
+  (incl. un-stash path for the theoretical multi-mode consumer).
+- self/: DECISIONS superseding entry (supersedes 2026-04-18 multi-project
+  decision), TASK-023 logged Done, STATUS updated.
+
+**Tests status:** doctor clean, pattern-scan clean, bats suite pass,
+bash -n clean on edited scripts (run pre-commit this session).
+
+**Contract changes:** contract:framework-layout updated (two removals) —
+additive-cosmetic, no consumer code change required.
+
+**Decisions made:** see DECISIONS 2026-06-10 (supersession + rejected
+alternatives: dormant-keep, two-release deprecation, doctor tombstone check).
+
+**Next session should:** pick up the pending fix list from the 2026-06-10
+external audit (C:\Claude\notes\multi-agent-framework-analysis.md):
+@import for CLAUDE.framework.md (highest impact — file is NOT auto-loaded,
+verified against docs), statusline stdin fix, test-filter regex anchor,
+spec-doc staleness (59 stale 00_framework refs). TASK-021/022 remain in Todo.
+
+### 2026-06-02 (session 15) — Second research sweep: 4 changes from cross-framework analysis (TASK-014..017)
+
+**Goal:** User ran a claude.ai research pass over OTHER agent frameworks
+(given the capabilities report from session 14) and pasted the result.
+Assessed each candidate, selected all four to build + a second research pass.
+
+**4 changes shipped (mechanism-only steals, all verified):**
+1. **TASK-014 — bats-core + shellcheck harness** (`framework/tests/`):
+   run-tests.sh + helpers.bash + 3 .bats files (23 tests), opt-in by tool
+   availability, runs via npx if Node-only. Caught a real set -e bug in
+   config-security.sh (`[ -d X ] || return` → exit 1 aborts script on repos
+   without .claude/hooks); fixed to `return 0`.
+2. **TASK-016 — instinct-miner dual-source** (ReasoningBank): now also mines
+   success signals → transferable-strategy candidates (propose-only),
+   alongside corrections. Boundary: project-specific "we chose X" = DECISION,
+   not strategy. clusterize() factored out for both passes.
+3. **TASK-015 — /healthcheck --verify --perturb** (Judge Reliability Harness):
+   perturb input (format/comment/rename on a throwaway copy), flag fragile
+   findings that flip under cosmetic change. Runbook-only.
+4. **TASK-017 — /housekeeping semantic decay** (Beads mechanism): distil
+   completed tasks forward into live state before archiving. Runbook-only.
+
+Rejected: Beads binary/DAG/hash-IDs (too invasive, single-branch), ReasoningBank
+auto-consolidation + embeddings, JRH ensemble voting, metaswarm, spec-kit. See
+DECISIONS 2026-06-02 (second entry).
+
+**Files:** new `.claude/framework/tests/{run-tests.sh,helpers.bash,*.bats,README.md}`;
+modified `config-security.sh` (set -e fix), `instinct-miner.sh` (success pass),
+`healthcheck.md` (--perturb), `housekeeping.md` (semantic decay), manifest
+(+tests/ dir-mirror), self state files.
+
+**Verified:** bats 23/23 PASS, doctor clean, pattern-scan clean, config-security
+self-scan 0 CRITICAL, miner bash -n clean.
+
+**Follow-on (same session) — third research pass → TASK-018..022.**
+Second/third claude.ai pass returned (led with "golden-trace deterministic
+replay"). Built the achievable parts, filed the bigger two:
+- TASK-018 fault-injection tier (fault_injection.bats, 11 tests). Caught + fixed
+  TWO real fail-open bugs: block-dangerous-commands.py crashed on non-JSON stdin
+  (wrapped json.load); verify-deps.sh exited 5 under set -e on non-JSON event
+  (added || true). config-security correctly does the opposite (flags malformed
+  config). bats now 35/35.
+- TASK-019 golden-fixture regression (fixtures/cfgsec-sample + golden + bats).
+  The achievable "replay" for deterministic detectors (can't replay LLM ones —
+  no model-client control). CRLF-tolerant (Git-Bash jq emits CRLF on -r).
+- TASK-020 /healthcheck --verify --pin: freeze detector input across runs to
+  attribute variance to model vs environment. Runbook-only. Mirror of --perturb.
+- TASK-021 FILED (Todo): OTel-style span schema for telemetry (pipeline-wide).
+- TASK-022 FILED (Todo): subagent context-bundle assembler (architect pass;
+  revives deferred HC8 ## Project paths item).
+Research concluded — well is dry. New files: fault_injection.bats,
+golden_config_security.bats, fixtures/cfgsec-sample/*, golden/cfgsec-sample.findings.
+Modified: block-dangerous-commands.py, verify-deps.sh, healthcheck.md, run-tests.sh.
+
+**Next session should:** TASK-014..022 committed+pushed this session. Board has
+TASK-021 (OTel span schema) + TASK-022 (context-bundle) in Todo for deliberate
+work — both bigger/architectural, neither urgent. Otherwise idle.
+
+--- (original session-15 next-step note, now superseded:)
+Committed TASK-014..017 + the second-pass research brief below.
+
+---
+SECOND-PASS RESEARCH BRIEF (paste into claude.ai) — two gaps the first pass
+couldn't fill. Hand it the session-14 capabilities report first (so it knows
+Section A / what we have), then this:
+
+"""
+Two gaps from your last pass were left unfilled. Focus this pass narrowly on
+them. Same rules as before: mechanism-only steals (file-based, dependency-light,
+human-in-loop, Claude-Code-specific); reject anything that needs a separate
+binary/service, a new fleet of agents, or autonomous self-modification.
+
+GAP 1 — Subagent context inheritance. When the main session delegates to a
+framework subagent (architect/developer/tester/reviewer) via the Task tool,
+passing the right slice of context (project paths, active contracts, the task's
+acceptance criteria, relevant GOTCHAS) is currently manual/ad-hoc. I want a
+first-class *mechanism* for assembling and passing a minimal, correct context
+bundle to a subagent — and for the subagent to know what it may and may not
+assume. Look at: how other multi-agent frameworks scope/scope-limit subagent
+context, context-bundle/"working-set" patterns, structured handoff schemas,
+and how they avoid both under-context (subagent guesses) and over-context
+(token bloat, leakage of priming that causes anchoring — we have a real
+anchoring bug, BUG-001). Beads' "dependency-graph-as-shared-context" is the
+closest thing you found last time; go deeper or find better.
+
+GAP 2 — Telemetry interpretation / "is the framework helping?". We already
+emit hook telemetry (events.jsonl) and roll it up into counters + a
+hand-curated framework-metrics.md (drift-guard fire rate, stop-hook block rate,
+tool-calls/session, AI-defect escape, review act-rate). The gap is the
+INTERPRETATION layer: turning longitudinal telemetry into a defensible read of
+whether the guardrails earn their cost, with thresholds that mean something.
+Look at: eval/observability frameworks' approaches to longitudinal agent-metric
+analysis, regression detection on agent-quality metrics over time, and
+analytic-rubric scoring applied to a framework's own effectiveness (not just
+the code it produces). I want a concrete method/harness, not "look at a
+dashboard."
+
+For each gap, bring back 1-3 concrete mechanisms with a one-line "why it beats
+what they have" and any philosophy caveat. Skip anything that lands in our
+Section A.
+"""
+---
+
+### 2026-06-02 (session 14) — ECC-repo inspiration sweep: 4 framework changes (TASK-009..012)
+
+**Goal:** After cold start, user asked to mine the ECC harness repo
+(github.com/affaan-m/ECC) for ideas to add to our framework. Then: "proceed
+and finish all."
+
+**Approach:** Gap-mapped ECC's surface (63 agents, 249 skills, AgentShield
+config auditor, continuous-learning-v2 instinct mining, hook profiles,
+memory-persistence/compact hooks, cross-harness adapters) against ours.
+Filed TASK-009..012 for the philosophy-aligned ideas; rejected the
+surface-multiplying ones (DECISIONS 2026-06-02). User selected all four;
+implemented in one sprint.
+
+**4 changes shipped:**
+
+1. **TASK-011 — Hook profile + opt-out convention.** New sourced helper
+   `.claude/hooks/lib/hook-common.sh`: `CLAUDE_HOOK_PROFILE=minimal|standard|strict`
+   + `CLAUDE_DISABLED_HOOKS="id,id"`, exposed as `hook_enabled <id> <tier>`
+   (tiers safety/normal/strict). All 7 hooks retrofitted with a fail-open
+   gate. doctor Check 1 → `-maxdepth 1` so the sourced lib isn't flagged.
+   Documented in CLAUDE.framework.md "Hook Configuration".
+
+2. **TASK-009 — Config-surface security auditor.**
+   `.claude/framework/audit/config-security.sh` scans the harness's own
+   attack surface (settings perms + secret-deny baseline, hook
+   shell-injection/`curl|bash`/`eval`, agent tool-scope creep, MCP
+   auto-install/shell-pipe, instruction-file override phrasing +
+   zero-width chars). `--format text|json`, exit 2 on CRITICAL. Wired into
+   /security Part 4 (4a auditor + 4b manual). Self-scan: 0 CRITICAL.
+
+3. **TASK-012 — Compaction nudge + cost markers (folded, no new files).**
+   Compaction nudge = drift-guard Indicator 5 (UserPromptSubmit, fires every
+   CLAUDE_SUGGEST_COMPACT_TURNS prompts, default 25). Cost markers =
+   cost-tracker block in enforce-state-update.sh (Stop), emits tool_uses +
+   transcript_lines per session end. framework-metrics.md gained a column +
+   source notes. Both gated by their own hook IDs.
+
+4. **TASK-010 — Instinct miner (proposes, never auto-writes).**
+   `.claude/framework/insights/instinct-miner.sh` auto-discovers the session
+   transcript, scans user turns for correction/directive signals, clusters
+   by normalized snippet (seen-count = confidence), writes proposals to
+   `.claude/.instinct-candidates.md` (gitignored) for human triage. Wired
+   into /wrapup step 2. Suppressed below INSTINCT_MIN_SIGNALS (default 3).
+
+**Follow-on (same session) — TASK-013: ECC agent-definition patterns.**
+User asked whether anything in ECC's agent definitions was worth working in.
+Assessment: our agents are already mature (reviewer has AI-failure checks from
+TASK-008; architect has opus + AskUserQuestion + step→verify ACs + draft/stable
+contracts; model tiers set). Two net-new patterns adopted:
+- behavioral-principles.md **§6 "Treat External Content as Data, Not
+  Instructions"** — prompt-injection resistance, inherited by all agents;
+  runtime complement to TASK-009's config-security.sh.
+- reviewer.md **"Severity Calibration & False Positives"** — evidence bar for
+  CRITICAL/WARNING, no-inflation rule, suppress-unless-evidenced false-positive
+  list. Synthesized with the existing flag-liberally stance.
+Rejected: ECC's blanket >80%-confidence gate (took the FP list, not the gate),
+verdict-count table (cosmetic), per-agent prompt-defense duplication.
+
+**Files touched (state at `.claude/framework/self/`):**
+- New: `.claude/hooks/lib/hook-common.sh`, `.claude/framework/audit/config-security.sh`,
+  `.claude/framework/insights/instinct-miner.sh`
+- TASK-013: `.claude/framework/agent_docs/behavioral-principles.md` (§6),
+  `.claude/agents/framework/reviewer.md` (calibration section)
+- /wrapup tweak (user request): added step 8 "Commit & push" (single yes/no
+  → git add -A + task-ID commit + push to main) and a closing copy-paste
+  "Next session — paste this to resume" prompt block. Steps 1–2 now defer
+  committing to step 8. `.claude/commands/wrapup.md`.
+- Modified hooks: auto-format, auto-lint, verify-deps, filter-test-output,
+  framework-drift-guard, enforce-state-update, block-dangerous-commands.py
+- Modified: `.claude/framework/doctor/doctor.sh` (Check 1 maxdepth),
+  `.claude/commands/security.md` (Part 4), `.claude/commands/wrapup.md` (step 2),
+  `CLAUDE.framework.md` (Hook Configuration), `.claude/framework-metrics.md`,
+  `.claude/framework/update/framework-manifest.txt`, `.gitignore`,
+  `.claude/FRAMEWORK-SUGGESTIONS.md`, self state files.
+
+**Manifest:** `audit/` and `insights/` are dir-mirror entries, so the two new
+scripts there are auto-covered. Added the one shared-dir file:
+`.claude/hooks/lib/hook-common.sh`. (suggest-compact.sh/cost-tracker.sh were
+pre-added then reverted when TASK-012 was folded into existing hooks.)
+
+**Settings.json:** NOT touched this sprint — TASK-012 was folded into already-
+registered hooks specifically to avoid a new registration (and the
+auto-classifier block). No pending approval this time.
+
+**Contract changes:** none.
+
+**Tests status:** doctor clean (exit 0), pattern-scan clean (0 findings),
+init clean, config-security self-scan 0 CRITICAL / 1 WARNING (intentional) /
+1 INFO, malicious-fixture test caught all 3 CRITICAL classes, all hooks
+`bash -n` clean, profile/nudge/cost/miner behaviours unit-tested.
+
+**Next session should:** commit this sprint (single commit or one per task,
+each with its TASK-ID). Then consider downstream: these are consumer-facing
+(hook profiles especially) — relay to consumers on next pull. Optional
+follow-ons: (a) extend config-security agent-scope check once more agents
+exist; (b) richer instinct clustering if the heuristic proves too noisy in
+real use. Board is otherwise idle.
+
+### 2026-05-14 (session 13) — AI-coding-research sweep: 11 framework changes (TASK-008)
+
+**Goal:** User dropped `deep-research-report.md` at project root — a ChatGPT-prepared deep research report on AI-written code defects (13-row issue taxonomy synthesised from ~30 cited studies). Asked: "consider how we can update our framework to address any of the issues we can address."
+
+**Approach:** Gap-mapped the report's 13 issue classes against the framework's existing surface (architect/developer/tester/reviewer/contracts/hooks/commands/state files/behavioral-principles). Identified what was already covered (most of the spec-first / separation-of-generation-from-review / small-batch surface), what was partially covered (security, dep checks), and what was a genuine gap. Proposed prioritized table. User said "do all."
+
+**11 changes shipped:**
+
+1. **`behavioral-principles.md` §4 — Uncertainty Signalling principle.** New per-turn discipline: state assumptions as lists not prose, hedging language is a feature, distinguish verified-vs-inferred, prefer verified existence over inferred. Counters the most-recurring AI defect root cause (silent overconfidence). Existing principles bumped to §3, §5.
+
+2. **`developer.md` — Assumptions disclosure in commit body.** Required for non-trivial commits: bullet list of versions assumed, files inferred, env conditions, API contracts. Plus a "verify before referencing external resources" subsection. Example commit message format included.
+
+3. **`reviewer.md` — six new AI-failure-mode checks (sections 5a-5f) + code-smell-as-gate section.**
+   - 5a Hallucinated symbols/APIs/packages → CRITICAL
+   - 5b Broad exception handling → CRITICAL
+   - 5c Assumption challenge → WARNING when Assumptions section missing
+   - 5d Commit message vs diff alignment → WARNING when claims unsupported
+   - 5e Generated-test quality (when diff includes tests) — unseeded random, iteration-order deps, sleep-as-sync, shallow assertions → CRITICAL/WARNING
+   - 5f Bias/fairness for protected-attribute branching → severity matches deployment context
+   - Code smells section: newly introduced unused vars/imports/dead-code → CRITICAL (was: WARNING). Cites: 89.3% of AI issues in one 6k-repo study are smells.
+
+4. **`tester.md` — anti-flakiness rules + higher-assurance decision tree.** Step 3 is new: no unseeded random, no iteration-order deps, no shared mutable state, no `time.sleep()` sync, no shallow assertions, host-env isolation, re-run new tests 3× locally. Step 2 also gains a decision table mapping change-shape (parser, protocol, concurrent, untrusted input, etc.) → recommended technique (property test, fuzz, model check, stress test).
+
+5. **`.claude/hooks/verify-deps.sh` (new) + manifest registration.** PostToolUse hook that fires on Write/Edit of package.json / pyproject.toml / requirements*.txt / Cargo.toml / go.mod / *.csproj. Best-effort registry existence check via curl (npm + PyPI fully automated; cargo/go/nuget detection-only). Findings to `.claude/.dep-verification-issues.md`. Non-blocking, opt-out via CLAUDE_DEP_VERIFY=0. Settings.json registration BLOCKED by auto-classifier — pending user approval.
+
+6. **`.claude/commands/security.md` (new) — /security command.** Stack-agnostic SAST + secret-scan + SCA + license-check sweep. Complementary to per-PR reviewer security checks; this is the whole-project periodic sweep. Six parts: detect shape, secret scan (gitleaks/trufflehog/grep fallback), SAST (bandit/semgrep/gosec/clippy + AI-specific grep patterns for SQL/path/shell injection), SCA (npm audit / pip-audit / cargo audit / govulncheck), workflow security (deny-rules, .gitignore, hook integrity), opt-in licence/provenance.
+
+7. **`healthcheck.md` — `/healthcheck --verify N` determinism mode.** New section codifies the 2026-04-26 BUG-001 lesson as a first-class command flag. Protocol: lock tree, run N audits with NO priming language, rotation per-run, capture counts, compare variance, verdict (stable / unstable / decaying). Required before any consumer is built on /healthcheck output. Default N=3.
+
+8. **`doctor.sh` Check 9 — detector-consumer invariant.** Greps recent framework changes for files that READ `review-findings.md` (rather than just write/append). If any found and no `_determinism-*.md` marker exists newer than the consumer file's mtime, emits a WARNING: "run `/healthcheck --verify 3` before relying on these consumers." Defends against BUG-001-style "ship automation against non-deterministic input" failures.
+
+9. **`framework-metrics.md` — AI-Authored Defect Escape section.** New table tracks: AI commits, hallucinated deps caught pre-commit (verify-deps.sh hook output), hallucinated deps found post-commit, broad-catch introduced (reviewer 5b CRITICAL), smell findings, post-merge bugs on AI commits. With interpretation guidance for delta-over-time signals.
+
+10. **`framework-manifest.txt` + `.gitignore`.** Manifest gains `commands/security.md` and `hooks/verify-deps.sh`. Gitignore gains `.dep-verification-issues.md`, `security-findings/`, `security-findings.md`.
+
+11. **FRAMEWORK-SUGGESTIONS entry** (pending — see Next).
+
+**Files touched (all in framework-self redirect; state files at `.claude/framework/self/`):**
+- New: `.claude/hooks/verify-deps.sh`, `.claude/commands/security.md`
+- Modified: `.claude/framework/agent_docs/behavioral-principles.md`, `.claude/agents/framework/developer.md`, `.claude/agents/framework/reviewer.md`, `.claude/agents/framework/tester.md`, `.claude/commands/healthcheck.md`, `.claude/framework/doctor/doctor.sh`, `.claude/framework-metrics.md`, `.claude/framework/update/framework-manifest.txt`, `.gitignore`, `.claude/framework/self/{TASKS,STATUS,DECISIONS,claude-progress}.{md,txt}`
+
+**Settings.json edit blocked.** Auto-classifier correctly denied adding the verify-deps.sh registration to PostToolUse hooks block — self-modification of agent config. Listed as Next Up #0. Without registration, the hook is shipped but inert in this clone; same for downstream consumers until they authorise.
+
+**Contract changes:** none. ECOSYSTEM.md framework-layout / state-file-paths / migration-behavior contracts untouched.
+
+**Tests status:** doctor clean, framework-drift-guard.sh smoke test still passing (no change to its inputs).
+
+**Next session should:**
+- (1) ~~Get user authorisation for settings.json edit to wire verify-deps.sh in. Without that, the hook ships dormant.~~ DONE same session, commit d5a77bc.
+- (2) Verify /healthcheck --verify N protocol end-to-end on reqtool — the existing rebaseline item (Next Up #1) is now exposed as the new mode.
+- (3) Watch for the doctor Check 9 warning to fire correctly the next time a consumer adds code that reads review-findings.md.
+- (4) Pick up Council of Agents deferred items: subagent path inheritance option (a), `state_root()` helper extraction, drift-guard Indicator 3 regex, `test-hooks.sh` harness.
+
+**Follow-on (same session, separate commit):** Drafted `RETRO-AUDIT.md` (`.claude/framework/docs/`) — per-release retro-audit checklist for consumers to scan existing code against new framework gates. Six sections for TASK-008's gates (hallucinated deps, broad-catch, test flakiness, missing Assumptions, smells, hook registration drift) each with copyable scan recipes, triage guidance, and suppression notes. Template included for future releases to extend. Added `VERIFY_DEPS_RETRO=1` env-var mode to verify-deps.sh (treats whole manifest as added — needed for the gate 1 driver to bulk-audit existing manifests). Manifest updated. Consumer workflow: pull → run sections newer than last audit → file findings as bugs.
+
+---
+
+### 2026-04-26 (session 12) — Drift-stability experiment, BUG-001 fix
+
+**Goal:** Validate the 2→8→12 contract-drift trend (the premise behind the deferred contract-drift mitigation work) by running /healthcheck three times on the reqtool unchanged tree. The chairman's verdict from session 11's council demanded this validation before any automation shipped.
+
+**Result of the experiment:** TOTAL findings 44 → 34 → 30. DRIFT 6 → 4 → 3. CRITICAL 1 → 1 → **0** (a real KeyboardInterrupt-swallowing bug literally vanished from run 3). Monotonic decay, not random variance.
+
+**Diagnostic:** The reqtool Claude was honest about contamination paths: (a) priming language in the orchestrator's prompts ("RUN N of 3 in stability experiment", "insert before existing block"), (b) the runbook's append-only `review-findings.md` design forced subagents to read prior content for insertion points. The run-2 reviewer literally wrote *"Alignment with Run 1: All four DRIFT items consistent... confirming detector stability."* That's anchoring, not independence.
+
+**Root cause (BUG-001):** /healthcheck's `review-findings.md` was append-only across runs. No rotation, no archival. Subagents told to PERSIST to that file would naturally read it first to find insertion points, and once exposed to prior runs' findings, would self-suppress duplicates. Within a single run, Part 4 subagents could anchor on Parts 1-3.
+
+**Fix shipped:**
+- `.claude/commands/healthcheck.md` Part 0 now has step 0.0 — rotate `.claude/review-findings.md` → `.claude/review-findings/<timestamp>.md` before any other work. Non-negotiable, FIRST step.
+- Each Part 1.3 / 2 / 3 / 4 subagent prompt now opens with: *"Independence rule. Do NOT read `.claude/review-findings.md` before forming your audit. That file is write-only for you."*
+- `.gitignore` adds `.claude/review-findings/` (audit history archive — local only).
+
+**Knock-on:** contract-drift mitigation work (the original deferred item that triggered the council) is DROPPED from STATUS.md Next Up. Premise was the 2→8→12 trend; trend was measured against the same structurally-vulnerable file; can't trust the data; not building automation against it. If a fresh-session rebaseline post-BUG-001 shows real decay, the item returns.
+
+**The council saved us either way.** Even though the validation step was contaminated, the council was right to demand validation before shipping. Without it we'd have built A or B against a metric we now know we can't trust. Worth saving as a "council save" example for framework metrics. Lesson generalised: *"validate detection determinism before shipping anything that consumes the detector's output."*
+
+**Files touched:**
+- `.claude/commands/healthcheck.md` (Part 0.0 rotation + 4 subagent independence rules)
+- `.gitignore` (`.claude/review-findings/`)
+- `.claude/framework/self/TASKS.md` (BUG-001 done with full root-cause writeup)
+- `.claude/framework/self/STATUS.md` (sprint goal, Next Up — drift item dropped, rebaseline added as #1)
+- `.claude/framework/self/claude-progress.txt` (this entry)
+
+**Contract changes:** none.
+
+**Next session should:**
+- (1) Run /healthcheck on reqtool from a FRESH session with no priming language. Three runs, just `/healthcheck` each time. Count findings. If stable → 2→8→12 trend was real and contract-drift work could return. If still varying → metric is intrinsically noisy and the drop is permanent.
+- (2) Pick up the deferred items the user prioritised: option (a) for subagent path inheritance (main-session-prepends-paths-block-to-Task-prompt), `state_root()` helper extraction, drift-guard Indicator 3 regex, `test-hooks.sh` harness.
+- (3) Verify `subagent_type=council-*` resolves natively after this fresh session (was inlined-persona workaround in session 11).
+
+---
+
+### 2026-04-26 (session 11) — Council of Agents shipped + README rewrite
+
+**Goal:** Implement the `/council` deliberation feature (net-new, from a Google Doc spec the user shared) and rewrite the README to reflect everything currently in the framework.
+
+**TASK-007 — Council of Agents:**
+- 6 new agents under `.claude/agents/council/` — 5 advisors (Contrarian, First Principles, Expansionist, Outsider, Executor) + Chairman
+- New command `.claude/commands/council.md` — 5-phase orchestration: frame → 5 parallel takes → anonymise A-E → 5 parallel peer reviews → chairman synthesis → transcript.md + report.html
+- Manifest updated (added `.claude/agents/council/` as dir-mirror, `.claude/commands/council.md` as file entry)
+- `.gitignore` updated — `.claude/council/` (deliberation outputs stay local)
+- Smoke-tested end-to-end on a real question (contract-drift mitigation: doctor-time hook vs PostToolUse hook). All 13 artefacts produced. Chairman verdict: *don't ship automated drift detection until the 2→8→12 trendline is validated against the same /healthcheck rules across 3 unchanged runs* — surfaced a measurement-artefact concern nobody on the orchestrator side had named.
+
+**Smoke-test caveat:** Council ran via `general-purpose` with personas inlined, because the new `council-*` subagent_type values aren't discoverable until next session. Orchestration logic is identical; native dispatch verification deferred to next session as a 30-second sanity check.
+
+**README rewrite:** Brought it current with everything since the previous version (which predated the Council feature, /healthcheck, /wrapup, /framework-mode, the framework update system, doctor, insights, multi-project mode, and stack-agnostic auto-detect). Added a "Council for high-stakes decisions" section, expanded "What's In The Box" to cover Framework Machinery (`update/`, `doctor/`, `insights/`, `audit/`, `project/`), and a new "Single vs Multi-Project Mode" section. Hooks listed accurately at 6 (was "five enforcement hooks").
+
+**Files touched:**
+- New: `.claude/agents/council/{contrarian,first-principles,expansionist,outsider,executor,chairman}.md`, `.claude/commands/council.md`, `.claude/council/2026-04-26-1635-contract-drift-mitigation/*` (smoke-test artefacts, gitignored)
+- Modified: `.claude/framework/update/framework-manifest.txt`, `.gitignore`, `README.md`, `.claude/framework/self/TASKS.md`, `.claude/framework/self/STATUS.md`, `.claude/framework/self/claude-progress.txt`
+
+**Contract changes:** none.
+
+**Tests status:** doctor clean throughout. Council smoke test full pipeline passing. Hook regression harness (`test-hooks.sh`) still queued — see Next Up.
+
+**Next session should:**
+- (1) Confirm `subagent_type=council-*` resolves natively in a fresh session by re-running `/council` on a smaller question — should work without the inlined-persona workaround.
+- (2) Process the user's 3-run /healthcheck output from reqtool. If the drift count is stable across runs, the trendline is real and we proceed with the Chairman's recommended trimmed-down doctor-time aggregate counter. If it varies, the metric is the problem and we kill the contract-drift work entirely.
+- (3) Take the holistic framework view the user wanted: address remaining deferred items (subagent path inheritance, `state_root()` helper, drift-guard Indicator 3 regex, `test-hooks.sh` harness) plus consider whether the council itself should be an option in any of those decisions.
+
+---
+
+### 2026-04-24 (session 10) — /healthcheck: 14 findings, all fixed
+
+**Goal:** Deep audit post-restructure. Reviewer subagent ran Part 1.3, caught 14 issues.
+
+**Key findings:**
+- **BR1 (CRITICAL)**: migrate-layout.sh CRITICAL grep pattern (`^## CRITICAL`) never matched doctor's bullet format (`- **CRITICAL**`). Contract guarantee silently broken. FIXED.
+- **CF1**: contract:migration-behavior step count mismatch (contract had 6 steps, script had 8). Contract updated to match actual script behaviour.
+- **ST1–ST10, BR2**: 10+ stale `00_framework/` references in state files (`.framework-version`, `framework-self.flag`, GOTCHAS.md, DECISIONS.md, framework-metrics.md, FRAMEWORK-SUGGESTIONS.md, README.md, healthcheck.md, MIGRATION.md). All fixed via targeted sed.
+- **ST-S1**: TASKS.md Done entries for TASK-002/003/004/005/006 lacked commit refs. Updated to 8647dd9.
+- **SEC1**: false positive — .gitignore:3 already has .claude/settings.local.json.
+
+**What was checked and clean:**
+- All cold start + manifest + hook + agent path refs
+- SCRIPT_DIR depth consistent across 14 subdirectory scripts
+- Contracts referenced correctly
+- No secrets anywhere
+- apply-update.sh pre-flight + drift-guard STATE_ROOT match contracts
+
+**Known issue persisting (filed, not fixed this session):**
+- Format/lint PostToolUse hooks still show 0 events in 340-event window despite heavy Write/Edit. Windows VSCode PostToolUse `Write|Edit|MultiEdit` matcher likely not firing. Already tracked in FRAMEWORK-SUGGESTIONS.md 2026-04-24 entry. Needs dedicated investigation.
+
+**Commits:** 3b1084f (checkpoint), (this session's fix commit).
+
+**Next session should:** Wait for downstream consumer pulls. If /healthcheck nudges at 14 days, confirm last-healthcheck timestamp (2026-04-24T23:19Z) works.
+
+---
+
+### 2026-04-24 (session 9) — TASK-002→006: migration tooling + full verification
+
+**Goal:** Complete the restructure sprint — migration script, apply-update hook, MIGRATION.md, tester verification.
+
+**TASK-005 (tester):** All ACs verified. AC7 (bare state refs in commands/agents) — instructional prose retains "TASKS.md" conceptually; functional code uses `.claude/` prefix correctly. AC9: drift-guard STATE_ROOT confirmed via script inspection. AC10: no broken paths in command runbooks.
+
+**TASK-002 (migrate-layout.sh):** Written at `.claude/framework/update/migrate-layout.sh`. Handles both scenarios: clean migration (git mv 00_framework/ as single dir) and merge-into-existing (when .claude/framework/ pre-exists). Idempotent. Doctor check on completion. Added to framework-manifest.txt.
+
+**TASK-003 (apply-update.sh pre-flight):** Pre-flight block added before VERSION_FILE check — critical ordering since .framework-version moves to .claude/ during migration.
+
+**TASK-004 (MIGRATION.md):** Layout Migration section added at top with Option A (curl) and Option B (manual).
+
+**TASK-006 (consumer simulation):** Two synthetic consumers tested — clean migration and merge-into-existing. Both passed all invariants. Idempotency confirmed on both.
+
+**Commits:** (pending this session's commit)
+
+**All tasks DONE. Sprint complete.**
+
+**Next session should:** Wait for downstream consumers to pull and migrate. HC9 expected from downstream. If any migration issues surface, patch migrate-layout.sh.
+
+---
+
+### 2026-04-24 (session 8) — TASK-001: framework layout migration executed
+
+**Goal:** Implement TASK-001 — move all framework files under .claude/.
+
+**What was done:**
+- `git mv 00_framework/ .claude/framework/` + git mv of all root state files
+- Bulk sed sweep: ~300 refs updated; targeted fixes for SCRIPT_DIR depth (2→3 levels in 14 scripts), STATE_ROOT/STATE_PREFIX in drift-guard, .gitignore temp flag paths
+- double `.claude/.claude/` corruption caught and fixed in apply-update.sh, check-updates.sh, plan/spec docs
+- framework-manifest.txt updated; pattern-scan SCAN_PATHS updated
+
+**Commit:** 9663226
+
+**Verification:** AC1 ✓, AC2 ✓, AC3 ✓, AC5 ✓, AC6 ✓, AC8 ✓ — doctor clean, pattern-scan clean.
+
+**Gotchas (new):** SCRIPT_DIR depth is move-sensitive (../.. → ../../.. when going from 2→3 levels deep). Documented in GOTCHAS.md.
+
+**Next session should:** Run TASK-005 (tester verification), then implement TASK-002 (migrate-layout.sh) and TASK-003 (hook in apply-update.sh).
+
+---
+
+### 2026-04-24 (session 7) — /analyse + /plan: framework layout restructure
+
+**Goal:** Architect a framework restructure to eliminate `.claude/framework/` and move all framework content under `.claude/`.
+
+**Cold start findings:**
+- Framework update: skipped (upstream repo — pinned SHA stale but pulling from self isn't meaningful)
+- Insights: 3 findings investigated — format/lint hooks have ZERO telemetry events (not even "skipped"). Root cause: PostToolUse hooks may not fire in Windows VSCode extension environment, or all prior edits went through Bash rather than Write/Edit tools. Filed as FRAMEWORK-SUGGESTIONS entry.
+- Doctor: clean. Healthcheck: 6 days old, within 14-day window.
+
+**Interview output (6 questions across 4 phases):**
+- Scope: compact framework footprint — specifically move `.claude/framework/` under `.claude/`
+- Driver: `.claude/framework/` creates a "massive mess" in consumer project roots
+- Layout: Option B — move state files (TASKS.md etc.) to `.claude/` as well, not just scripts
+- CLAUDE.framework.md: stays at root (Claude Code auto-loads CLAUDE*.md; @-import deferred)
+- State file layout: flat under `.claude/` (no `state/` subdir; consistent with review-findings.md)
+- Migration: automated — apply-update.sh detects old layout and runs migrate-layout.sh
+
+**Spec written:** `.claude/framework/docs/specs/SPEC-framework-restructure.md`
+- 5 user stories, 10 acceptance criteria, gap analysis (~52 files to move, ~300 refs to update)
+- 3 phases: upstream restructure / consumer migration tooling / consumer rollout
+
+**Contracts written:** ECOSYSTEM.md (was template, now has 3 stable contracts)
+- `contract:framework-layout` — canonical directory layout post-restructure
+- `contract:state-file-paths` — where each state file lives; self-mode redirect pattern
+- `contract:migration-behavior` — migrate-layout.sh interface, exit codes, invariants
+
+**Tasks created:** .claude/framework/self/TASKS.md
+- TASK-001 (P1, Developer): Upstream restructure — git mv + sed sweep + manifest
+- TASK-002 (P2, Developer): Write migrate-layout.sh
+- TASK-003 (P2, Developer): Hook migration into apply-update.sh
+- TASK-004 (P3, Developer): Update MIGRATION.md
+- TASK-005 (P1, Tester): Verify upstream restructure
+- TASK-006 (P2, Tester): Verify consumer migration simulation
+
+**Plan written:** `.claude/framework/docs/plans/PLAN-framework-restructure.md`
+- Step-by-step implementation guide for TASK-001 (the big-bang commit)
+- TASK-002 shell script scaffold
+- Risk register, downstream communication prompt
+
+**Contract changes:** ECOSYSTEM.md — 3 new stable contracts.
+
+**Decisions:** DECISIONS.md updated with 2 entries (layout restructure decision + PostToolUse hook investigation outcome).
+
+**Files touched:** ECOSYSTEM.md, .claude/framework/self/TASKS.md, .claude/framework/self/STATUS.md, .claude/framework/self/DECISIONS.md, .claude/framework/docs/specs/SPEC-framework-restructure.md, .claude/framework/docs/plans/PLAN-framework-restructure.md (new), FRAMEWORK-SUGGESTIONS.md.
+
+**Next session should:**
+- Pick up TASK-001 (Developer) — the big-bang upstream restructure
+- Follow the PLAN-framework-restructure.md implementation guide precisely: reference map → git mv → sed sweep → verify → commit
+- After TASK-001 + TASK-005 pass, move to TASK-002 (migrate-layout.sh) and TASK-003
+- Watch for PostToolUse hook telemetry: if no format/lint events appear during TASK-001's Write/Edit calls, PostToolUse is confirmed broken in this environment → escalate to a dedicated investigation
+
+---
+<!-- After every ~10 new entries, compress them into 5 bullets in the Rolling Summary above. -->
+<!-- When detailed entries exceed ~30, move older ones to .claude/framework/docs/archives/progress-archive.txt and regenerate the Rolling Summary. -->
+<!-- Each entry must include: task IDs touched, files created/modified, tests status, contract changes, decisions made, and a clear "next session should" directive. -->
+
+### 2026-04-18 (session 6) — HC8 sweep from downstream + /wrapup command
+
+Two items this session: built `/wrapup` (session-close context-flush checklist) and swept the 7 actionable HC8 items from the downstream's latest FRAMEWORK-SUGGESTIONS report.
+
+**`/wrapup` command:** b3c49ea. Seven-check runbook (uncommitted files → unpersisted decisions → STATUS.md accuracy → claude-progress "next session should" → memory candidates → pending todos → unanswered questions). Deliberately separate from `/housekeeping` because cadences differ — this is per-session, housekeeping is periodic archival. Added to manifest.
+
+**HC8 seven-item sweep:** three commits, themed.
+
+- **473eac5 (hooks layer):** F12 (configurable `PROJECT_PATTERN` via `HEALTHCHECK_SOURCE_DIRS` or `FRAMEWORK_DRIFT_SOURCE_PATTERN`), F13 (STATE_REGEX matches `decisions/*.md` + `contracts/*.md`), F25 (filter-test-output uses `mktemp`). All verified via hook smoke tests (jq-aware).
+- **04361ee (docs layer):** F4 (inline framework-self rationale into CLAUDE.framework.md, delete broken `.claude/framework/self/README.md` outward reference), F5/F14 (CLAUDE.md template clarifies that CLAUDE.framework.md's Cold Start is authoritative and CLAUDE.md is for additions not competing lists).
+- **70f63dc (safety):** F28 (reviewer/developer agents detect unpopulated `code-conventions.md` template and skip convention checks or fall back to observed patterns), F33 (doctor Check 8 warns if `framework-self.flag` is tracked by git).
+
+**Pushed back on / deferred (messaged to downstream):**
+- All 2026-04-16 HC6 items — already fixed in prior sweeps.
+- Post-sync patching mechanism — deliberately NOT building (opposite of the recent retire-framework-patch direction).
+- Subagent path inheritance — real but design-level; deferred.
+- FRAMEWORK-MANIFEST.md drift — file doesn't exist upstream (downstream-local).
+- 2026-04-15 Housekeeping items — hook metrics ARE instrumented (stale observation); contract-drift acceleration deferred; pending-archive is downstream workflow.
+
+**Verification:** doctor clean (jq-aware), pattern-scan clean, all hook smoke tests pass.
+
+**Files touched:** `.claude/hooks/framework-drift-guard.sh`, `.claude/hooks/filter-test-output.sh`, `CLAUDE.framework.md`, `CLAUDE.md`, `.claude/agents/framework/reviewer.md`, `.claude/agents/framework/developer.md`, `.claude/framework/doctor/doctor.sh`, `.claude/framework/doctor/README.md`, `.claude/commands/wrapup.md`, `.claude/framework/update/framework-manifest.txt`.
+
+**Contract changes:** none.
+
+**Tests status:** hook smoke tests passing. Still no test harness (FRAMEWORK-SUGGESTIONS.md 2026-04-16 test-hooks.sh idea still queued — this session didn't progress it).
+
+**Next session should:**
+- Wait for downstream pull + HC9 report. Expect `framework-patch.sh` to still be deleted and the seven HC8 items to be closed. If anything new surfaces, that's the next sweep.
+- Consider picking up the deferred architectural items: subagent path inheritance (project-paths.json or Task-prompt path passing) and contract-drift acceleration (doctor check?). Both need design before implementation.
+
+**Outcome (same-day):** Downstream pulled c7c8bfd (b3c49ea..c7c8bfd, 26 paths updated). All 7 HC8 items verified with file:line grep + inspection:
+- F4 CLAUDE.framework.md:30 ✓, F5/F14 CLAUDE.md header ✓, F12 framework-drift-guard.sh:40-51 ✓, F13 framework-drift-guard.sh:79 ✓, F25 filter-test-output.sh:18,24 ✓, F28 developer.md:48-50 + reviewer.md:50 ✓, F33 doctor.sh:273-284 ✓.
+
+F12 live-tested in downstream's real Python layout: `HEALTHCHECK_SOURCE_DIRS="02_src/reqtool"` → `PROJECT_PATTERN=^(02_src/reqtool)/` → correctly matches `02_src/reqtool/cli.py`, ignores `01_pipeline/...` and `.claude/framework/...`. Configurable source pattern works as designed.
+
+Doctor silent exit 0 (all 8 invariants hold, including new Check 8). Zero new HC9 findings. Downstream's FRAMEWORK-SUGGESTIONS.md cleaned — 7 dispositions flipped to "RESOLVED UPSTREAM (c7c8bfd)" with inline file:line evidence; review-findings rows flipped to FIXED; TASK-081 (tracked a workaround for F13) downgraded since the framework now handles it natively.
+
+**Loop fully closed on HC8.** Framework-layer divergences: zero. Next sweep will be HC9 whenever that runs.
+
+---
+
+### 2026-04-18 (session 5) — downstream patch-6 sweep: agent-layer generic phrasing
+
+After session 2-4, downstream consumer pulled the changes and reported back: `framework-patch.sh` dropped 11 → 6 patches. The remaining 6 were all in agent definition prose (architect/developer/tester/reviewer) — commands + hooks + CLAUDE.framework.md got the generic contracts/decisions phrasing in Batch B, but agents were a separate framework layer the commands-focused sweep didn't touch.
+
+User sent an implementation-ready report: exact file + line + current text + suggested rewrite for each of the 16 occurrences across 4 agent files. Implemented verbatim.
+
+**Commit:** 94f668d.
+
+**Pattern applied consistently:**
+- Locations that name a file → `"ECOSYSTEM.md by default; per-file `contracts/` — see CLAUDE.md"` (names the monolithic default, notes the per-file alternative, defers to CLAUDE.md).
+- Prose references that flow better generically → `"the contract" / "the decisions log" / "the project's contracts"`.
+
+**Files touched:** architect.md (5 sites), developer.md (5 sites), tester.md (3 sites), reviewer.md (3 sites).
+
+**Verification:** doctor clean, pattern-scan clean. Remaining `ECOSYSTEM.md` / `DECISIONS.md` tokens in agent files all appear inside "by default" / "default:" naming contexts — no hardcoded-only-location refs remain.
+
+**Expected downstream effect:** patch count 6 → 0. `framework-patch.sh` can be deleted entirely.
+
+**Framework-level lesson saved to memory** (`feedback_sweep_all_framework_layers.md`): when fixing cross-cutting patterns in framework-owned files, grep across all 4 layers (commands + hooks + agents + CLAUDE.framework.md) up front. Piecemeal layer-by-layer sweeps leave downstream consumers maintaining patches longer than necessary. Generalises the existing "audit pattern-class sweep" discipline.
+
+**Next session should:** wait for downstream's next pull + patch-count report to confirm 6 → 0. If any patches linger, those are the next sweep targets.
+
+**Outcome (same-day, same session):** Downstream pulled 0eca27c and `--dry-run`'d `framework-patch.sh`. Found that the `ECOSYSTEM.md → contracts/{module}.md` detect-regex matched the benign new phrasing `"default: ECOSYSTEM.md; per-file layouts use contracts/"` and would have corrupted it to `"default: contracts/{module}.md; per-file layouts use contracts/"` — actively harmful, not just redundant. Downstream **deleted `framework-patch.sh` and `framework-update.sh` entirely**. Closes downstream TASK-078. All future framework-owned content now flows through `apply-update.sh` with zero post-processing.
+
+**Downstream-contributed lesson** (folded into `feedback_downstream_patch_count_metric.md` + `feedback_sweep_all_framework_layers.md`): patch count is a lagging indicator. The hard signal is a post-sync `--dry-run + inspect`: a patch's detect-regex can match upstream's NEW BENIGN text, in which case running it would silently corrupt defer-to-default phrasing. That's strictly worse than a redundant patch — silent until applied. Build dry-run-and-inspect into downstream's post-sync workflow, not just count-the-patches.
+
+**The loop is closed.** This consumer has zero framework-layer patches. `apply-update.sh` is now the single source of truth for framework content in the downstream project.
+
+---
+
+### 2026-04-18 (session 4) — verification pass: apply-update + jq + end-to-end hook tests
+
+After session 3 landed the `.claude/framework/self/` redirect, this session verified everything works.
+
+**What was verified:**
+
+1. **apply-update.sh smoke test (synthetic consumer):** Created a temp fake consumer with `.framework-version` pointing at this repo via `file://` URL and a 5-commits-behind pinned SHA. Ran `apply-update.sh` — 24 paths updated (all from the manifest), `.claude/framework/self/` correctly absent from the consumer afterward. Confirms the migration's core invariant: framework-self state does not leak.
+
+2. **jq installed via winget:** `winget install jqlang.jq` — turned out jq was already installed but WinGet's `Links/` dir wasn't in Git Bash's PATH. Added one line to `~/.bashrc` (with user approval) pointing at `/c/Users/damie/AppData/Local/Microsoft/WinGet/Links`. New login shells now resolve `jq` correctly.
+
+3. **framework-drift-guard.sh end-to-end:** on a clean working tree with no staged changes, hook returns `{}` (no drift). Exits 0. STATE_REGEX path construction (flag-aware) working as intended.
+
+4. **filter-test-output.sh end-to-end:**
+   - Passthrough path (`ls -la` non-test command): returns `{}`. ✓
+   - Rewrite path with embedded double-quotes (`npm test -- --testNamePattern="foo"`): produces valid JSON with `\"foo\"` properly escaped by `jq --arg`, and the rewritten command uses `$?` after a tempfile redirect — no PIPESTATUS, no pipefail. Confirms SEC1 + #7 fixes both work on a genuinely-tricky input.
+
+**Discovered:** Pre-existing false-negative in drift-guard Indicator 3 — `grep -ci "in.progress"` on TASKS.md matches the `### In Progress` section heading as well as tasks under it, so IN_PROGRESS count is never zero on a template-empty file. Logged in self/STATUS.md Known Issues. Low priority.
+
+**Files touched:** `.claude/framework/self/STATUS.md` (updated completed/blockers/next-up), `.claude/framework/self/claude-progress.txt` (this entry), `~/.bashrc` (system, not repo).
+
+**Contract changes:** none.
+
+**Tests status:** all hook smoke tests passing. Still no test harness — see Next Up #1.
+
+**Next session should:** (1) file a real TASKS.md entry for `.claude/framework/tests/test-hooks.sh` harness so this verification becomes repeatable; (2) consider extracting a `state_root()` helper shared by the 3 scripts that duplicate the flag-check pattern.
+
+---
+
+### 2026-04-18 (session 3) — framework-self redirect migration
+
+- **Goal:** let the upstream framework repo fully dogfood the framework without leaking upstream-only state (TASKS/STATUS/DECISIONS/progress/metrics) into consumer clones.
+- **Design landed:** gitignored `.claude/framework-self.flag` toggles framework-self mode. Cold-start, hooks, doctor, and insights honour the flag: read/write `.claude/framework/self/<filename>` when on, root when off. Stop hook needs no change (substring-based grep matches either location). Consumers never have the flag; zero impact.
+
+**Commit:** 883cc91.
+
+**Files touched:**
+- New: `.claude/framework/self/README.md`, `TASKS.md`, `STATUS.md`, `DECISIONS.md`
+- Moved (root content preserved at self/): `claude-progress.txt`, `framework-metrics.md` — root now empty templates, so fresh consumer clones no longer inherit upstream dev logs or metric snapshots
+- Modified: `.gitignore` (adds `.claude/framework-self.flag`), `CLAUDE.framework.md` (cold-start paragraph), `.claude/hooks/framework-drift-guard.sh` (STATE_ROOT/STATE_PREFIX + regex + same `grep -c || echo "0"` bug on line 64 that was fixed on 43-44 earlier), `.claude/framework/doctor/doctor.sh` (check_task_duplicates flag-aware), `.claude/framework/insights/update-metrics.sh` (TARGET path flag-aware)
+
+**Decisions recorded in self/DECISIONS.md:** "Framework-self redirect via `.claude/framework/self/` + gitignored flag" with rejected alternatives documented (single-tree+reset / templates+bootstrap / branch separation / multi-project mode).
+
+**Verification:**
+- `bash .claude/framework/doctor/doctor.sh` → still clean (0 CRIT / 0 WARN / 1 INFO — jq missing, pre-existing).
+- Flag properly gitignored: `git check-ignore -v .claude/framework-self.flag` confirms `.gitignore:8`.
+- `.claude/framework/self/` committed as new content; NOT in `framework-manifest.txt`, so `apply-update.sh` won't propagate it to consumers.
+
+**Known gap:** Still no jq locally — can't smoke-test drift-guard's new STATE_REGEX end-to-end. The regex change is pure string construction; low risk but worth verifying before relying on it.
+
+**Next session should:**
+- Install jq locally and verify drift-guard emits the expected reminder when `.claude/framework/self/*.md` state files are stale but `01_Project/` has >3 changes.
+- Smoke-test `apply-update.sh` against a real consumer: confirm `.claude/framework/self/` does NOT propagate and consumer's root state files stay as they have them.
+- Consider whether `.claude/framework/lib/state-root.sh` helper is worth extracting (4 copies of the flag-check pattern live in separate scripts now — minor duplication).
+
+---
+
+### 2026-04-18 (session 2) — downstream-healthcheck sweep: 10 upstream issues fixed
+
+- **Source:** user hand-curated /healthcheck findings from a downstream consumer project. All 10 items target framework-owned files (manifest-managed, reset on sync).
+- **Design call made:** framework is now **stack-agnostic with auto-detect** (user's explicit choice). Node is no longer a blessed default; pyproject.toml / go.mod / Cargo.toml / *.csproj all produce working hooks.
+
+**Fixes landed (in order):**
+- `31076b9` Batch A (#1, #4, #6): removed `/context` refs from CLAUDE.framework.md; genericised drift-guard's periodic-checkin reminder; corrected `.hook-metrics` path in housekeeping.md.
+- `0bda411` Batch B (#2, #3): cold-start steps 5-6 + six command runbooks now reference "contracts" / "decisions" generically and defer per-file-layout resolution to project CLAUDE.md. Plus two more `/context` refs caught in plan.md/test.md.
+- `03d93f7` Batch C (#5): architect/developer/tester scope paths now hedge `01_Project/src/`, `01_Project/tests/`, and shared-types locations with "per project CLAUDE.md" — no longer implicitly Node/TS.
+- `9890a76` Batch D (#8): auto-format.sh + auto-lint.sh dispatch by file extension + tool availability — TS/JS, Python (ruff/black), Go (gofmt/go vet), Rust (rustfmt/clippy), .NET (dotnet format, opt-in via env var).
+- `1d18c76` Batch E (#9): .claude/framework/init.sh detects stack under 01_Project/ by manifest (package.json → npm, pyproject.toml → uv/pip, go.mod → go mod, Cargo.toml → cargo fetch, *.csproj → dotnet restore); dev-server startup still Node-only (universal :3000 convention) with "report and defer to CLAUDE.md" for other stacks.
+- `c60a001` Batch F (#10): agent_docs templates (architecture.md, building.md, testing.md) now show parallel recipes per stack; code-conventions.md populated with stack-neutral starter guidance covering domain language, naming (per-language idioms), file org, error handling, logging, imports, shared utilities, patterns to follow/avoid.
+- `d586cec` #7 resolution: filter-test-output.sh rewritten to drop PIPESTATUS dance — tempfile + `$?` capture sidesteps pipefail/PIPESTATUS subtleties entirely.
+- `d0b8f86` Pattern-class sweep: caught `/context` in analyse/build/review.md and stale `.claude/.hook-metrics` in .gitignore/framework-metrics/README/claude-code-dev-framework that I missed in the cited-files-only first pass. Applied GOTCHAS.md audit-pattern-sweep lesson.
+
+**Verification:** doctor scan clean (0 CRIT / 0 WARN / 1 INFO — jq missing only). init.sh smoke test on this repo (stack=unknown) exits cleanly with "Ready to work." Grep sweep confirms no `/context` in `.claude/**` or CLAUDE.framework.md; no hardcoded `01_Project/src/` or `01_Project/tests/` agent refs without the "per project CLAUDE.md" hedge.
+
+**Known gaps:**
+- `claude-code-dev-framework.md` retains `/context` references — intentional (it's a human-reader ops guide about Claude Code, not agent instructions). Consumer `framework-patch.sh` also skips it.
+- jq-missing on this box blocks end-to-end drift-guard and filter-test-output smoke tests; short-circuits cleanly. Install jq locally to verify.
+
+**Decisions:**
+- Framework stack policy: **stack-agnostic with auto-detect** (user choice). All hooks + init.sh now dispatch by manifest. 01_Project/ stays canonical project root; specific sub-layout deferred to CLAUDE.md.
+- .NET linter/formatter opt-in only via CLAUDE_DOTNET_LINT / CLAUDE_DOTNET_FORMAT env vars — `dotnet format` is too slow to run on every edit.
+- Old `.claude/.hook-metrics` path retired; `.claude/telemetry/.hook-metrics` is the single source of truth. `.gitignore` entry for the old path removed (covered by `.claude/telemetry/` anyway).
+
+**Contract changes:** none (contracts stayed at ECOSYSTEM.md/contracts/ dual-layout; runbooks now acknowledge the dual-layout explicitly).
+
+**Tests status:** no automated tests for hooks yet — FRAMEWORK-SUGGESTIONS.md 2026-04-16 already suggests a `test-hooks.sh` harness. Would catch regressions in jq-missing degradation + stack-detection dispatch.
+
+**Next session should:** (1) install jq locally and re-run end-to-end verification of drift-guard + filter-test-output; (2) revisit the `.claude/framework/self/` redirect migration (scoped earlier this session but deferred for this sweep — user explicitly sized it and may want to proceed); (3) consider filing `test-hooks.sh` as an actual TASKS.md item rather than a long-lingering suggestion.
+
+---
+
+### 2026-04-18 (session 1) — /healthcheck deep audit + fixes
+
+- **Command:** /healthcheck (first run — .last-healthcheck was missing)
+- **Mode:** single; no project code (upstream framework repo)
+- **Parts run:** 0 (shape detection), 1 (framework integrity via reviewer), 4 (state file consistency via reviewer), 6 (checkpoint commit), 7 (fixes)
+- **Parts skipped:** 2, 3, 5 — no project code to review
+
+**Findings captured** to .claude/review-findings.md (commit 2357182):
+- BROKEN: B1 (.last-healthcheck path in CLAUDE.framework.md), B2 (grep -c || echo 0 in framework-drift-guard.sh), B3 (MIGRATION.md CRLF + stale manifest desc)
+- STALE: S1 (doctor README Check 7), S2 (REVIEW_ACT_RATE_LOW dead config), S3 (insights "future doctor.sh"), ST2 (healthcheck collision in MIGRATION.md)
+- ORPHANED: O1 (insights README missing 2 scripts)
+- CONFLICT: C1 (reviewer tools: Bash)
+- SECURITY hygiene: SEC1 (filter-test-output.sh jq escaping)
+- MISALIGNMENT: M1/M4 (framework-metrics vs consumer), M3 (FRAMEWORK_MODE wording)
+
+**Fix commits (in order):** 2357182 (audit checkpoint) → 30a4c64 (B1, B2, M3 + FRAMEWORK-SUGGESTIONS 2026-04-16 marked FIXED) → 31cd28f (B3, ST2 MIGRATION.md) → ab182f3 (S1, S2, S3, O1, C1 doc fixes) → 1feac53 (SEC1, M1/M4).
+
+**Files touched:** CLAUDE.framework.md, framework-drift-guard.sh, GOTCHAS.md, FRAMEWORK-SUGGESTIONS.md, MIGRATION.md, doctor.sh, doctor/README.md, insights/README.md, insights/thresholds.conf, reviewer.md, claude-code-dev-framework.md, filter-test-output.sh, framework-metrics.md.
+
+**Decisions:** Dispatched MIGRATION.md Step 2 by manifest *semantic* (trailing slash = dir) rather than filesystem type, matching apply-update.sh. Option A (drop `|| echo 0`) chosen for B2 per FRAMEWORK-SUGGESTIONS guidance. REVIEW_ACT_RATE_LOW commented out rather than implemented — keep dead config obviously dormant until paired with analyse.sh logic.
+
+**Contract changes:** none.
+
+**Tests status:** Ran `bash .claude/hooks/framework-drift-guard.sh` smoke test — short-circuits on missing jq before reaching the fixed code, so end-to-end verification deferred to a box with jq installed.
+
+**Next session should:** install jq locally so drift-guard + insights can actually run end-to-end (current box stops at the `jq missing` guard in every framework hook). Consider filing a FRAMEWORK-SUGGESTIONS entry for a `pattern-scan.sh` audit helper (already suggested 2026-04-18) — would have caught B1, B2, SEC1 pre-commit.
+
+---

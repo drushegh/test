@@ -1,0 +1,9 @@
+# .framework-version — tracks this project's pinned framework version.
+# Managed by .claude/framework/update/. Committed to git (so every clone knows
+# where upstream is and what SHA they're on).
+FRAMEWORK_UPSTREAM_URL=git@github.com-personal:drushegh/claude-code-multi-agent-framework.git
+FRAMEWORK_UPSTREAM_BRANCH=main
+FRAMEWORK_PINNED_SHA=a8f3a49002830baba7206b8092421c6cc8f87dba
+FRAMEWORK_LAST_CHECKED=2026-06-13T22:55:17Z
+FRAMEWORK_CHECK_INTERVAL_HOURS=24
+FRAMEWORK_MODE=single

@@ -1,0 +1,14 @@
+# .claude/.skills-version — project-owned skills-repo pin + selection.
+# Sourceable shell. Managed by .claude/framework/update/skills-sync.sh
+# (rewrites SKILLS_PINNED_SHA on sync) and skills-check.sh (rewrites
+# SKILLS_LAST_CHECKED). Committed to git so every clone syncs the same set.
+#
+# NOTE: uses the github.com-personal SSH host alias (matches
+# .framework-version); plain git@github.com fails publickey for this account.
+SKILLS_UPSTREAM_URL=git@github.com-personal:drushegh/CCMAF---Skills.git
+SKILLS_UPSTREAM_BRANCH=main
+SKILLS_PINNED_SHA=b35e530f698a714a786549af30209506571a9355
+SKILLS_LAST_CHECKED=2026-06-14T19:51:08Z
+SKILLS_CHECK_INTERVAL_HOURS=24
+# This is a test repo — every catalogue skill is selected on purpose.
+SKILLS_SELECTED="accessibility-development android-development api-development azure-development bash-development blender-development containers-development copilot-studio-development devops-development dotnet-development dynamics-365-development electron-development fabric-development frontend-development godot-development ios-development kubernetes-development linux-administration linux-development llm-development m365-development power-bi-development power-pages-development power-platform-development powershell-development python-development react-development rust-development secure-development sentinel-development sql-development tauri-development testing-development threejs-development typescript-development unity-development unreal-engine-development web-scraping-development"

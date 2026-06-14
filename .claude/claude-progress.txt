@@ -1,0 +1,74 @@
+## Rolling Summary
+<!-- Auto-generated summary of recent sessions. Regenerated every ~10 sessions. -->
+<!-- Cold Start reads THIS section + the last 3 detailed entries below. -->
+<!-- This gives new sessions a fast skim of recent trajectory without reading 30 entries. -->
+
+(No sessions yet — this section is populated automatically after ~10 sessions.)
+
+---
+
+## Session Log
+<!-- Newest sessions at the top. -->
+<!-- After every ~10 new entries, compress them into 5 bullets in the Rolling Summary above. -->
+<!-- When detailed entries exceed ~30, move older ones to .claude/framework/docs/archives/progress-archive.txt and regenerate the Rolling Summary. -->
+<!-- Each entry must include: task IDs touched, files created/modified, tests status, contract changes, decisions made, and a clear "next session should" directive. -->
+
+### 2026-06-14 — Framework setup verification + skills tier opt-in
+- **Task IDs touched:** none (framework infrastructure setup, not feature work).
+- **Purpose:** User cloned the framework into this test repo; asked to verify setup and bring in ALL skills (test repo — every skill will get exercised over time).
+- **What ran:**
+  - Cold-start health checks: `doctor.sh` clean (exit 0, no findings); `check-updates.sh` clean (framework up to date at pinned SHA a8f3a49); `analyse.sh` raised 3 insight findings (see below).
+  - Confirmed skills upstream (`drushegh/CCMAF---Skills`) is reachable ONLY via the `git@github.com-personal:` SSH host alias — plain `git@github.com:` fails publickey for this account (same alias the framework upstream uses).
+  - Enumerated the catalogue (38 skills, each with SKILL.md) by shallow-cloning upstream.
+- **Files created/modified:**
+  - `.claude/.skills-version` — NEW. Opts into skills sync; URL uses the `-personal` alias; `SKILLS_SELECTED` lists all 38 catalogue skills; pin rewritten to b35e530 on sync.
+  - `.claude/skills/<38 dirs>/` — synced from upstream (skills-sync.sh: 38 synced, 0 refused).
+  - State files (STATUS.md, TASKS.md, this file).
+- **Tests status:** n/a (no app tests touched). Verified: 38 skill dirs on disk, all with SKILL.md; skills-check.sh reports up-to-date post-sync; no leftover suggestion/update flags.
+- **Contract changes:** none (contract:skills-sync exercised as designed, not modified).
+- **Decisions made:** Selected ALL 38 skills (not stack-detected subset) per user direction — this is a test repo meant to exercise the full catalogue. Used the `-personal` host alias in `.skills-version` because the default `github.com` SSH identity can't auth to this account.
+- **Insights alert (3 findings, .claude/.framework-insight-alert.md):** drift-guard 0% fire rate; Stop-hook block rate 100% / 3-of-5 sessions. These reflect prior monitoring-demo sessions that scaffolded throwaway content — expected artifacts of a setup-only repo, not a real habit gap. Recommend dismiss unless the user wants to tune thresholds.
+- **Next session should:** commit `.claude/.skills-version` + `.claude/skills/` (uncommitted now — an uncommitted sync that later differs from upstream will be REFUSED on the next sync; .skills-version is meant to be committed so every clone syncs the same set). Demo content under 01_Project/ and 02_solution/ remains throwaway.
+
+### 2026-06-14 — Monitoring demo session (4 parallel working agents)
+- **Task IDs touched:** none planned; logged BUG-001 and BUG-002 from the review.
+- **Purpose:** User monitoring agent activity with a host app; asked for agents doing real independent work to observe.
+- **What ran:** 4 subagents in parallel, each in its own files to avoid collisions —
+  - developer → base62 codec
+  - developer → URL normalizer/validator
+  - architect → rate-limiting design doc
+  - reviewer → read-only review of stringUtils.ts
+- **Files created/modified:**
+  - `01_Project/src/base62.ts` + `tests/base62.test.ts` — encode/decode over [0-9A-Za-z], round-trip + boundary + error tests (tests written, NOT independently run)
+  - `01_Project/src/urlNormalizer.ts` + `tests/urlNormalizer.test.ts` — isValidHttpUrl/normalizeUrl, 31 tests
+  - `02_solution/rate-limiting-design.md` — token-bucket, Redis-backed, decisions D5–D7
+  - `.claude/review-findings.md` — reviewer output
+  - State files (TASKS.md, STATUS.md, this file)
+- **Tests status:** 81 passing under Vitest 4.1.8 (stringUtils + urlNormalizer, confirmed by normalizer agent). base62 suite written but unverified.
+- **Contract changes:** none.
+- **Decisions made:** none committed (illustrative content). Reviewer flagged 2 real bugs in existing `truncate()` → logged as BUG-001 (P1, surrogate-pair split) and BUG-002 (P2, NaN guard bypass).
+- **Next session should:** treat created files as throwaway demo content. If desired, fix BUG-001/BUG-002 in `truncate()` and run the base62 suite to confirm it. Otherwise sample files can be deleted with no impact.
+
+### 2026-06-14 — Monitoring demo session (parallel agents)
+- **Task IDs touched:** none (monitoring demo, not real framework work)
+- **Purpose:** User is monitoring agent activity with a host app; asked to run agents doing independent work to observe.
+- **What ran:** 4 subagents in parallel — Explore (`.claude/` structure survey, read-only), general-purpose (README/framework summary, read-only), developer (created sample utility code), architect (created sample design doc). All completed cleanly.
+- **Files created/modified:**
+  - `01_Project/src/stringUtils.ts` — slugify/truncate/titleCase pure functions (sample content)
+  - `01_Project/tests/stringUtils.test.ts` — 19 Vitest cases for the above
+  - `02_solution/url-shortener-design.md` — illustrative one-page design spec
+  - State files (TASKS.md, STATUS.md, this file) to satisfy the Stop hook
+- **Tests status:** tests written but not run (no package.json / Vitest installed; intentional — files are sample content).
+- **Contract changes:** none.
+- **Decisions made:** none (sample artifacts only, not committed).
+- **Next session should:** treat created files as throwaway sample content. If real work begins, run /analyse then /plan to initialize the project properly. Sample files can be deleted with no impact.
+
+### 2026-06-14 — App-reaction demo session
+- **Task IDs touched:** none (not real framework work)
+- **Purpose:** User is building a host app that runs Claude Code; asked to spin up agents to observe how the app reacts to agent activity.
+- **What ran:** 4 read-only subagents in parallel — Explore (repo map), general-purpose (framework summary), claude-code-guide (subagent explainer), general-purpose (file count). All completed cleanly; no code changed.
+- **Files created/modified:** only state files (TASKS.md, STATUS.md, this file) to satisfy the Stop hook.
+- **Tests status:** n/a (no tests exist; project is empty scaffolding).
+- **Contract changes:** none.
+- **Decisions made:** none.
+- **Next session should:** treat this as a throwaway demo — if real work begins, run /analyse then /plan to initialize the project.
