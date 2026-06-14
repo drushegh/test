@@ -19,26 +19,38 @@ The imported Cold Start Sequence is authoritative — this file is for *project-
 
 ## What
 
-{{One-two line project description}}
+`datakit` — a small, pure, dependency-free TypeScript data-transform toolkit (parse /
+validate / transform / format / pipeline / cli). **It is a test bed for *harvey*** (a live
+supervisor for multi-agent Claude Code workflows), NOT a product to ship. It is
+deliberately incomplete: most functions are stubs and a few are seeded with bugs, so that
+agents working the backlog emit a rich, observable stream of activity. See `SCENARIOS.md`.
 
 ## Tech Stack
 
-- Language: {{e.g. TypeScript}}
-- Backend: {{e.g. Node.js + Express}}
-- Frontend: {{e.g. React + Tailwind CSS}}
-- Database: {{e.g. PostgreSQL + Prisma}}
-- Testing: {{e.g. Vitest + Playwright}}
+- Language: TypeScript (ES2022, strict)
+- Runtime: Node.js, ESM
+- Testing: Vitest
+- No backend / frontend / database / network / auth — pure in-memory logic only (by design).
+
+## Contract & Decision Layout
+
+- Contracts: monolithic `.claude/ECOSYSTEM.md` (default layout).
+- Decisions: monolithic `.claude/DECISIONS.md` (default layout).
 
 ## Commands (run from 01_Project/)
 
-    cd 01_Project && npm run dev          # Start dev server
-    cd 01_Project && npm test             # Run test suite
-    cd 01_Project && npm run build        # Production build
+    cd 01_Project && npm install          # First-time setup (deps declared, not installed)
+    cd 01_Project && npm test             # Run the Vitest suite (mostly red — that's the backlog)
+    cd 01_Project && npm run typecheck    # tsc --noEmit
+    # (no dev server / build step — this is a library, not an app)
 
 ## Project-Specific Notes
 
-<!-- Add anything specific to this project here:
-     - Non-obvious setup steps
-     - Team conventions that deviate from the framework defaults
-     - External service accounts, env vars, or credentials the project needs
-     - Pointers to project wikis, Slack channels, ticketing systems -->
+- **Do NOT "finish" the implementations or "fix" the seeded bugs/contested contract
+  outside a scenario.** The incompleteness IS the deliverable — see `.claude/DECISIONS.md`
+  (D1–D4) and the "seeded friction" note at the bottom of `SCENARIOS.md`.
+- Stubs throw `NotImplementedError` (greppable). `parseJSON` (happy path) and `formatJSON`
+  are the only correct reference impls.
+- `contract:pipeline-format` is `status:draft` on purpose (contested) — TASK-007 is meant
+  to trigger a STOP-and-escalate, not an implementation.
+- Backlog: `.claude/TASKS.md`. Seeded traps: `.claude/GOTCHAS.md`. Demo playbook: `SCENARIOS.md`.

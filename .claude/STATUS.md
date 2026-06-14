@@ -1,6 +1,6 @@
 # Project Status
 
-Last updated: 2026-06-14 (framework setup verification + skills tier opt-in: all 38 catalogue skills synced)
+Last updated: 2026-06-14 (architect /analyse — datakit harvey test bed designed, scaffolded, and verified)
 
 <!-- Do NOT record push/ahead-behind state as prose here — it goes stale
      the moment anything is committed. It is computed on demand:
@@ -8,44 +8,48 @@ Last updated: 2026-06-14 (framework setup verification + skills tier opt-in: all
 
 ## Current Sprint Goal
 
-{{Define after /analyse and /plan}} — project still uninitialized scaffolding.
+Stand up `datakit` as a **test bed for harvey** (multi-agent supervisor): a typed, pure,
+deliberately-incomplete data-transform toolkit whose backlog drives observable agent
+activity. Analysis + scaffold are done; the backlog is intentionally left unimplemented
+for harvey to work. See `SCENARIOS.md`.
 
 ## Active Work
 
 | Agent | Working On | Task | Started | Status |
 | ----- | ---------- | ---- | ------- | ------ |
-| orchestrator | Framework setup verification + skills tier opt-in | — | 2026-06-14 | Done |
+| architect | /analyse: spec, contracts, backlog, gotchas, decisions, scenarios, scaffold | — | 2026-06-14 | Done |
 
 ## Recently Completed
 
 | Task | Completed By | When | Commit |
 | ---- | ------------ | ---- | ------ |
-| Framework setup verified (doctor + update-check clean) + skills tier opt-in, all 38 catalogue skills synced (upstream b35e530) | orchestrator | 2026-06-14 | (uncommitted) |
-| Base62 codec (encode/decode) + tests | developer agent | 2026-06-14 | (uncommitted) |
-| URL normalizer + validator + 31 tests | developer agent | 2026-06-14 | (uncommitted) |
-| Rate-limiting design doc (illustrative, D5–D7) | architect agent | 2026-06-14 | (uncommitted) |
-| Read-only review of stringUtils (2 bugs found) | reviewer agent | 2026-06-14 | n/a |
-| Sample string utility + tests (prior session) | developer agent | 2026-06-14 | (uncommitted) |
-| URL-shortener design doc (illustrative) | architect agent | 2026-06-14 | (uncommitted) |
+| /analyse → full test-bed deliverable set (SPEC, ECOSYSTEM contracts, TASKS, GOTCHAS, DECISIONS, SCENARIOS, scaffold) | architect | 2026-06-14 | (uncommitted) |
+| Scaffold verified: npm install + tsc clean + vitest run (6 pass / 25 fail / 1 todo, ~3.6s) | architect | 2026-06-14 | (uncommitted) |
+| Framework setup verified + skills tier opt-in (all 38 skills) | orchestrator | 2026-06-14 | 0441154 (branch) |
 
 ## Blockers
 
-- None
+- **TASK-007** is intentionally BLOCKED on the contested `contract:pipeline-format`
+  (an architect decision) — this is by design (scenario 3), not a real impediment.
 
 ## Current Test Status
 
-- Unit tests: 81 passing under Vitest 4.1.8 (stringUtils + urlNormalizer suites; confirmed green by the normalizer agent)
-- base62 tests: written but NOT independently run — verify before relying on them
-- E2E tests: not yet written
-- Last full run: 2026-06-14 (81 passed)
+- `01_Project`: Vitest **6 passing / 25 failing / 1 todo** (13 files). This red-heavy split
+  IS the backlog — failures are unimplemented stubs (`NotImplementedError`) + 3 seeded bugs.
+- Passing (working references): `parseJSON` (valid/malformed), `formatJSON`, `formatCSV`
+  (basic, no special chars), `throughput.slow` (intentionally ~seconds).
+- Typecheck: `tsc --noEmit` clean. `npm install` done locally (node_modules gitignored).
+- Last run: 2026-06-14, duration ~3.6s.
 
-## Known Issues
+## Known Issues (SEEDED ON PURPOSE — do not "fix" outside a scenario)
 
-- BUG-001 (P1): `truncate()` in stringUtils.ts splits UTF-16 surrogate pairs (emoji) — see Bug-Fix Lane
-- BUG-002 (P2): `truncate()` with `max = NaN` bypasses the guard and returns "..." instead of throwing — see Bug-Fix Lane
-- Both surfaced by the reviewer agent; full detail in `.claude/review-findings.md`. All artifacts are throwaway demo content (uncommitted).
+- BUG-001 (P2): `dedupe` drops the last element — bug-fix lane / scenario 6.
+- BUG-002 (P2): `formatCSV` doesn't quote special characters — bug-fix lane.
+- BUG-003 (P3): `parseJSON` accepts empty input as valid — bug-fix lane.
+- `contract:pipeline-format` is `status:draft`/contested on purpose — scenario 3.
 
-## Next Up (when current work completes)
+## Next Up
 
-1. Run /analyse to define requirements
-2. Run /plan to create contracts and tasks
+1. (Optional) commit the test-bed analysis output (currently uncommitted on branch `setup/framework-and-skills`).
+2. Point harvey at the repo and run the scenarios in `SCENARIOS.md` (start with scenario 1).
+3. Per scenario: `git checkout -- 01_Project` between runs to restore the seeded baseline.

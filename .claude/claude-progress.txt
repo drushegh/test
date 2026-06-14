@@ -13,6 +13,35 @@
 <!-- When detailed entries exceed ~30, move older ones to .claude/framework/docs/archives/progress-archive.txt and regenerate the Rolling Summary. -->
 <!-- Each entry must include: task IDs touched, files created/modified, tests status, contract changes, decisions made, and a clear "next session should" directive. -->
 
+### 2026-06-14 — /analyse: datakit harvey test bed (spec + contracts + backlog + scaffold)
+- **Task IDs touched:** created the whole datakit backlog (TASK-001..009, BUG-001..003). None implemented (by design).
+- **Purpose:** Run /analyse on this repo to make it a dedicated TEST BED for *harvey* (a multi-agent
+  Claude Code supervisor). Per the user brief: the product is only a vehicle; the deliverable is a
+  codebase + backlog that, when worked by role agents, emits a rich, observable, repeatable stream of
+  agent activity exercising every harvey panel.
+- **Approach:** Skipped the structured interview — the brief IS the requirements doc. Acted as architect.
+- **Product chosen:** `datakit` — a pure, dependency-free TS data-transform toolkit (TS + Node + Vitest).
+  6 modules: parse / validate / transform / format / pipeline / cli. Domain kept orthogonal to harvey's own.
+- **Files created/modified:**
+  - `.claude/ECOSYSTEM.md` — one machine-readable contract per module; `contract:pipeline-format` marked
+    **status:draft (CONTESTED)** as the STOP-and-escalate trigger.
+  - `.claude/TASKS.md` — Feature lane TASK-001..009 (6 run in parallel; TASK-004 = 8-operator fan-out;
+    TASK-007 = contested wiring; TASK-009 = long-running suite). Bug-fix lane BUG-001..003.
+  - `.claude/GOTCHAS.md` — 3 seeded traps (G1 CSV BOM→TASK-001, G2 NDJSON newline→TASK-002, G3 purity→TASK-004/BUG-001).
+  - `.claude/DECISIONS.md` — D1 (stack+purpose), D2 (contested contract), D3 (seeded bugs spread), D4 (reference impls).
+  - `.claude/framework/docs/specs/SPEC-datakit-testbed.md` — product spec + harvey-surface map + gap analysis + ACs traced to brief.
+  - `SCENARIOS.md` (repo root, **centerpiece**) — table mapping each of the 6 demo prompts → exact harvey behavior to watch.
+  - `01_Project/` — package.json/tsconfig/vitest.config; `src/` 6 modules (13 stubs throwing NotImplementedError,
+    3 seeded-buggy impls, parseJSON+formatJSON correct); `tests/` 13 spec files pinning contracts; slow throughput test.
+  - Removed throwaway monitoring-demo code (stringUtils/base62/urlNormalizer + 02_solution design docs);
+    reset stale `.claude/review-findings.md` (was an upstream framework-self healthcheck); filled `CLAUDE.md` template.
+- **Tests status:** VERIFIED. `npm install` + `tsc --noEmit` clean + `vitest run` → 6 pass / 25 fail / 1 todo (~3.6s).
+  Red = the backlog (stubs + seeded bugs); green = the 2 reference impls + basic CSV + the slow test.
+- **Contract changes:** created all module contracts. `contract:pipeline-format` is intentionally draft/contested.
+- **Decisions made:** D1–D4 in DECISIONS.md. Key one: incompleteness/bugs/contested-contract are FEATURES — do not "fix" them outside a scenario.
+- **Next session should:** (optionally) commit this output; then point harvey at the repo and run SCENARIOS.md
+  scenario 1 first. Restore the seeded baseline between scenario runs with `git checkout -- 01_Project`.
+
 ### 2026-06-14 — Framework setup verification + skills tier opt-in
 - **Task IDs touched:** none (framework infrastructure setup, not feature work).
 - **Purpose:** User cloned the framework into this test repo; asked to verify setup and bring in ALL skills (test repo — every skill will get exercised over time).

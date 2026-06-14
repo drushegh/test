@@ -1,0 +1,16 @@
+{
+  "name": "datakit",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Typed data-transform toolkit — a test bed for the harvey multi-agent supervisor. Intentionally incomplete.",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  }
+}

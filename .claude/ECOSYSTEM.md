@@ -1,102 +1,266 @@
 # Project Ecosystem — Source of Truth
 
 <!-- Contracts are the shared interface agreements between agents. -->
-<!-- Every task in TASKS.md references its relevant contract by ID (e.g., "Contract: contract:user-registration"). -->
+<!-- Every task in TASKS.md references its relevant contract by ID (e.g., "Contract: contract:parse"). -->
 <!-- When this file exceeds ~300 lines, split into per-module files in .claude/framework/agent_docs/contracts/ -->
 
 <!-- CONTRACT FORMAT:
-     Each contract has two parts:
-     1. Prose description: human-readable context, business rules, edge cases
-     2. Machine-readable spec: fenced code block with a stable ID anchor
-
-     Anchor format:    contract:IDENTIFIER status:draft|stable
-     (placed in an HTML comment before the fenced block)
-
-     - status:draft  = design in progress, NOT ready for implementation
-     - status:stable = reviewed and confirmed, safe to implement against
-
-     Reference from TASKS.md:  "Contract: contract:IDENTIFIER"
-     The developer agent will REFUSE to implement against draft contracts.
-
-     The machine-readable block is the ENFORCEABLE spec. The prose is context.
-     If they conflict, update both, but the code block is what agents validate against.
-
-     Supported formats (use whichever fits your stack):
-     - typescript: TypeScript interfaces/types
-     - json-schema: JSON Schema for request/response validation
-     - openapi: OpenAPI fragments for API contracts
-     - sql: Table schemas for database contracts
-     - graphql: GraphQL type definitions
+     Anchor:  contract:IDENTIFIER status:draft|stable   (in an HTML comment before the fenced block)
+     - status:draft  = design in progress / contested, NOT ready for implementation.
+                       The developer agent will REFUSE to implement against a draft contract.
+     - status:stable = reviewed and confirmed, safe to implement against.
+     The machine-readable block is the ENFORCEABLE spec; prose is context. If they conflict,
+     update both — but the code block is what agents validate against.
 -->
 
-## API Contracts
+> **PROJECT PURPOSE — READ FIRST.** This codebase (`datakit`, a typed data-transform
+> toolkit) is a **test bed for harvey**, a live supervisor for multi-agent Claude Code
+> workflows. The product is a *vehicle*: the real deliverable is a backlog that, when
+> worked by role agents (orchestrator → architect → developer → tester → reviewer),
+> emits a rich, repeatable, observable stream of agent activity. Contracts below are
+> intentionally designed so that working them exercises harvey's panels — including
+> **one deliberately contested contract** (`contract:pipeline-format`) that forces a
+> STOP-and-escalate. See `SCENARIOS.md` for the demo-prompt → expected-behavior map.
 
-<!-- DELETE THIS EXAMPLE — replace with your project's actual contracts. -->
-<!-- The example is deliberately status:draft so the developer agent refuses to
-     implement against it if it's accidentally left in place. Your real contracts
-     get status:stable once the design is confirmed. -->
-<!-- contract:user-registration status:draft -->
-
-### POST /api/users — User Registration
-
-Creates a new user account. Returns 409 if email already exists.
-Rate limit: 5 attempts per IP per hour.
-
-```typescript
-// Request
-interface CreateUserRequest {
-  email: string; // Must be valid email format
-  name: string; // 1-100 characters
-  password: string; // Minimum 8 characters, at least one number
-}
-
-// Response 201
-interface CreateUserResponse {
-  id: string;
-  email: string;
-  name: string;
-  createdAt: string; // ISO 8601
-}
-
-// Error 400
-interface ValidationError {
-  error: string;
-  details: { field: string; message: string }[];
-}
-
-// Error 409
-interface ConflictError {
-  error: "Email already registered";
-}
-```
-
-<!-- END EXAMPLE -->
+---
 
 ## Shared Types
 
-<!-- DELETE THIS EXAMPLE — replace with your project's actual shared types. -->
-<!-- Deliberately status:draft; see the note on the example above. -->
-<!-- contract:shared-types status:draft -->
+The vocabulary every module shares. Stable — implement against freely.
+
+<!-- contract:shared-types status:stable -->
 
 ```typescript
-interface User {
-  id: string;
-  email: string;
-  name: string;
-  createdAt: string;
+// A single record. Heterogeneous string-keyed cells; values are JSON scalars/containers.
+export type Cell = string | number | boolean | null;
+export type Row = Record<string, Cell>;
+
+// Discriminated result for fallible operations (parse, validate). No exceptions across
+// module boundaries — callers branch on `ok`.
+export type Result<T> =
+  | { ok: true; value: T }
+  | { ok: false; error: string };
+
+// A pipeline stage: a named, PURE, synchronous transform from I to O.
+// `name` is what harvey shows on the topology edge; keep it stable and human-readable.
+export interface Stage<I, O> {
+  readonly name: string;
+  run(input: I): O;
 }
 
-interface ApiError {
-  error: string;
-  details?: { field: string; message: string }[];
+// A column-ordered table envelope. `columns` fixes display/serialization order across
+// heterogeneous rows; `rows` may omit columns (treated as null) or carry extras (ignored
+// for ordering). Produced by the pipeline's tabulate step.
+export interface Table {
+  columns: string[];
+  rows: Row[];
 }
 ```
 
-<!-- END EXAMPLE -->
+---
+
+## parse/ — string → structured data
+
+Owner: `parse` module. Three independent parsers; each returns `Result` (never throws on
+malformed input). Pure, synchronous, no I/O.
+
+- `parseCSV` — RFC 4180-ish. First row is the header. Must **strip a leading UTF-8 BOM**
+  (see GOTCHA G1). Quoted fields may contain commas and escaped quotes (`""`).
+- `parseJSON` — single JSON document → `unknown`. Empty input is an **error**, not `null`
+  (see BUG-003).
+- `parseNDJSON` — one JSON value per line. A **trailing newline must not** produce a
+  phantom empty record (see GOTCHA G2).
+
+<!-- contract:parse status:stable -->
+
+```typescript
+export interface CsvOptions {
+  delimiter?: string; // default ","
+}
+
+// Header row becomes object keys. All cell values are strings (no type coercion here).
+export function parseCSV(input: string, opts?: CsvOptions): Result<Row[]>;
+
+// Parses exactly one JSON document. Empty/whitespace-only input => { ok:false }.
+export function parseJSON(input: string): Result<unknown>;
+
+// One JSON value per non-empty line. Trailing newline is ignored, not an empty element.
+export function parseNDJSON(input: string): Result<unknown[]>;
+```
+
+---
+
+## validate/ — runtime schema validation
+
+Owner: `validate` module. A tiny, dependency-free schema validator over `Row`/`unknown`.
+Pure, synchronous. Returns every failing field (not just the first).
+
+<!-- contract:validate status:stable -->
+
+```typescript
+export type FieldType = "string" | "number" | "boolean" | "null";
+
+export interface FieldSchema {
+  type: FieldType;
+  required?: boolean; // default true
+}
+
+export type Schema = Record<string, FieldSchema>;
+
+export interface ValidationIssue {
+  field: string;
+  message: string;
+}
+
+// ok:true with the typed value, or ok:false with a flat list of issues.
+export function validate(value: unknown, schema: Schema): Result<Row> & {
+  issues?: ValidationIssue[];
+};
+```
+
+---
+
+## transform/ — independent operators (FAN-OUT SURFACE)
+
+Owner: `transform` module. Eight **independent** operators, each in its own file. This is
+the parallelism surface — they share only `shared-types` and never each other. Every
+operator is **pure**: it MUST NOT mutate its input (see GOTCHA G3 — `sort`/`dedupe`).
+
+<!-- contract:transform status:stable -->
+
+```typescript
+export function map<I, O>(rows: I[], fn: (row: I, i: number) => O): O[];
+export function filter<T>(rows: T[], pred: (row: T, i: number) => boolean): T[];
+export function reduce<T, A>(rows: T[], fn: (acc: A, row: T) => A, init: A): A;
+
+// Stable sort by a key selector; ascending. MUST NOT mutate `rows`.
+export function sort<T>(rows: T[], key: (row: T) => Cell): T[];
+
+// Remove duplicates by a key selector, keeping the FIRST occurrence and order.
+// MUST NOT mutate `rows`. (Buggy reference impl ships for the bug-fix lane — BUG-001.)
+export function dedupe<T>(rows: T[], key: (row: T) => Cell): T[];
+
+// Flatten one level of nested arrays.
+export function flatten<T>(rows: T[][]): T[];
+
+// Group rows by a key selector into a Map (insertion order of first-seen keys).
+export function groupBy<T>(rows: T[], key: (row: T) => string): Map<string, T[]>;
+
+// Fixed-size contiguous windows. Drops a trailing partial window (length < size).
+export function window<T>(rows: T[], size: number): T[][];
+```
+
+---
+
+## format/ — structured data → string
+
+Owner: `format` module. Three output formatters. Pure, synchronous.
+
+> ⚠ **This module is one half of the contested `contract:pipeline-format`.** `formatTable`
+> below takes `Row[]` and derives its columns from the first row — it makes **no promise**
+> about a caller-supplied column order. The pipeline needs that promise. Do not silently
+> change this signature to resolve the conflict; that is an architect decision.
+
+<!-- contract:format status:stable -->
+
+```typescript
+// Columns derived from Object.keys(rows[0]). No external column-order input.
+export function formatTable(rows: Row[]): string;
+
+// Pretty JSON (2-space indent).
+export function formatJSON(value: unknown): string;
+
+// RFC 4180 CSV. MUST quote fields containing the delimiter, quotes, or newlines
+// (buggy reference impl ships for the bug-fix lane — BUG-002).
+export function formatCSV(rows: Row[]): string;
+```
+
+---
+
+## pipeline/ — typed composition engine
+
+Owner: `pipeline` module. Composes `Stage<I,O>` values left-to-right with type-checked
+chaining, plus a `tabulate` stage that produces the column-ordered `Table` envelope.
+
+<!-- contract:pipeline status:stable -->
+
+```typescript
+import type { Stage, Row, Table } from "../types";
+
+// Type-checked left-to-right composition. Output of stage N must equal input of N+1.
+export function compose<A, B>(s1: Stage<A, B>): Stage<A, B>;
+export function compose<A, B, C>(s1: Stage<A, B>, s2: Stage<B, C>): Stage<A, C>;
+export function compose<A, B, C, D>(
+  s1: Stage<A, B>, s2: Stage<B, C>, s3: Stage<C, D>,
+): Stage<A, D>;
+
+// Produces a Table with explicit, stable column ordering (union of keys, first-seen order).
+// This is the pipeline's column-ordering GUARANTEE.
+export function tabulate(columnsHint?: string[]): Stage<Row[], Table>;
+```
+
+### ⚠ CONTESTED: pipeline → table formatter wiring
+
+<!-- contract:pipeline-format status:draft -->
+
+```typescript
+// The pipeline's terminal formatting stage is TYPED to receive a Table, because the
+// pipeline guarantees stable column ordering (via `tabulate`) across heterogeneous rows:
+import type { Stage, Table } from "../types";
+export type TableFormatStage = Stage<Table, string>;   // pipeline EXPECTS this shape
+
+// BUT contract:format promises only:
+//     formatTable(rows: Row[]): string      // no `columns` param, no ordering guarantee
+//
+// ┌─ THE CONFLICT ────────────────────────────────────────────────────────────────┐
+// │ A developer told to "wire the pipeline to the table formatter" cannot satisfy   │
+// │ BOTH stable contracts at once:                                                  │
+// │   • format has no parameter to receive `Table.columns` → the pipeline's column- │
+// │     ordering guarantee is silently lost.                                        │
+// │   • Resolving it means EITHER widening contract:format to accept `Table`,        │
+// │     OR relaxing contract:pipeline to emit `Row[]` and drop the ordering          │
+// │     guarantee. Both are cross-module contract changes.                          │
+// │                                                                                  │
+// │ Per Agent Rules (CLAUDE.framework.md): developers may TIGHTEN a contract inline, │
+// │ but WIDENING → escalate to the Architect. This contract is `status:draft`, so    │
+// │ the developer agent must STOP and escalate rather than implement. (Scenario 3.)  │
+// └──────────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## cli/ — thin runner
+
+Owner: `cli` module. Wires parse → transform → format from argv. No framework, no network.
+
+<!-- contract:cli status:stable -->
+
+```typescript
+export interface CliResult {
+  exitCode: number;
+  stdout: string;
+  stderr: string;
+}
+
+// Pure function over argv + stdin string (no process side effects — testable).
+// e.g. run(["--from","csv","--to","json"], inputText)
+export function run(argv: string[], stdin: string): CliResult;
+```
+
+---
 
 ## Module Boundaries & File Ownership
 
 | Module | Owner Role | Files | Notes |
 | ------ | ---------- | ----- | ----- |
+| shared-types | architect | `01_Project/src/types.ts` | Foundation; changing it ripples everywhere — touch rarely. |
+| parse | developer | `01_Project/src/parse/*` | 3 parsers, independent. Gotchas G1 (CSV BOM), G2 (NDJSON newline). BUG-003 (parseJSON empty). |
+| validate | developer | `01_Project/src/validate/*` | Independent of all others. |
+| transform | developer | `01_Project/src/transform/*` | 8 operators, fully independent — the fan-out surface. Gotcha G3 (purity). BUG-001 (dedupe). |
+| format | developer | `01_Project/src/format/*` | 3 formatters. Half of the contested contract. BUG-002 (formatCSV escaping). |
+| pipeline | architect+developer | `01_Project/src/pipeline/*` | Composition engine. Owns the contested `pipeline-format` wiring. |
+| cli | developer | `01_Project/src/cli/*` | Thin; depends on parse/transform/format. Build last. |
 
 ## Design Tokens
+
+(n/a — no UI in this product.)
