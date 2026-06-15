@@ -1,15 +1,18 @@
 import type { Cell } from "../types";
-import { notImplemented } from "../types";
 
 /**
  * Stable ascending sort by a key selector. Pure.
- * Contract: contract:transform. BACKLOG: TASK-004.
+ * Contract: contract:transform. TASK-004.
  *
- * ⚠ GOTCHA G3 (.claude/GOTCHAS.md): Array.prototype.sort mutates IN PLACE. This
- *   operator must copy first (e.g. `[...rows].sort(...)`) — mutating the caller's
- *   array breaks purity and corrupts other operators reading the same input in
- *   parallel pipelines.
+ * G3: copies input with spread before sorting — Array.prototype.sort mutates in place.
  */
-export function sort<T>(_rows: T[], _key: (row: T) => Cell): T[] {
-  return notImplemented("transform.sort (TASK-004)");
+export function sort<T>(rows: T[], key: (row: T) => Cell): T[] {
+  return [...rows].sort((a, b) => {
+    const ka = key(a);
+    const kb = key(b);
+    if (ka === kb) return 0;
+    if (ka === null) return -1;
+    if (kb === null) return 1;
+    return ka < kb ? -1 : 1;
+  });
 }

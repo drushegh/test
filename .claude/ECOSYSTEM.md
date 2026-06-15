@@ -19,8 +19,10 @@
 > worked by role agents (orchestrator → architect → developer → tester → reviewer),
 > emits a rich, repeatable, observable stream of agent activity. Contracts below are
 > intentionally designed so that working them exercises harvey's panels — including
-> **one deliberately contested contract** (`contract:pipeline-format`) that forces a
-> STOP-and-escalate. See `SCENARIOS.md` for the demo-prompt → expected-behavior map.
+> **one deliberately contested contract** (`contract:pipeline-format`) designed to force a
+> STOP-and-escalate. (It was escalated and **resolved via D5** this session — now
+> `status:stable`; restore the seeded baseline with `git checkout` to re-arm scenario 3.)
+> See `SCENARIOS.md` for the demo-prompt → expected-behavior map.
 
 ---
 
@@ -156,16 +158,22 @@ export function window<T>(rows: T[], size: number): T[][];
 
 Owner: `format` module. Three output formatters. Pure, synchronous.
 
-> ⚠ **This module is one half of the contested `contract:pipeline-format`.** `formatTable`
-> below takes `Row[]` and derives its columns from the first row — it makes **no promise**
-> about a caller-supplied column order. The pipeline needs that promise. Do not silently
-> change this signature to resolve the conflict; that is an architect decision.
+> ✅ **RESOLVED (D5, 2026-06-14).** This module was one half of the formerly-contested
+> `contract:pipeline-format`. The conflict — the pipeline needed a caller-supplied column
+> order that `formatTable(rows: Row[])` could not receive — is resolved by **widening
+> `formatTable` to accept a `Table`**: it uses `table.columns` for header/serialization
+> order and `table.rows` for data. `Table` is an already-exported shared type, so this adds
+> no new dependency and preserves the pipeline's column-ordering guarantee end-to-end.
 
 <!-- contract:format status:stable -->
 
 ```typescript
-// Columns derived from Object.keys(rows[0]). No external column-order input.
-export function formatTable(rows: Row[]): string;
+import type { Table } from "../types";
+
+// Renders a column-ordered table. Header/serialization order comes from `table.columns`;
+// data comes from `table.rows`. Rows may omit columns (treated as null) or carry extras
+// (ignored for ordering). This is the form the pipeline's terminal stage wires to (D5).
+export function formatTable(table: Table): string;
 
 // Pretty JSON (2-space indent).
 export function formatJSON(value: unknown): string;
@@ -199,32 +207,35 @@ export function compose<A, B, C, D>(
 export function tabulate(columnsHint?: string[]): Stage<Row[], Table>;
 ```
 
-### ⚠ CONTESTED: pipeline → table formatter wiring
+### ✅ RESOLVED: pipeline → table formatter wiring (D5)
 
-<!-- contract:pipeline-format status:draft -->
+<!-- contract:pipeline-format status:stable -->
 
 ```typescript
+// RESOLVED 2026-06-14 (DECISIONS.md D5, TASK-007, SCENARIOS.md scenario 3).
+//
 // The pipeline's terminal formatting stage is TYPED to receive a Table, because the
 // pipeline guarantees stable column ordering (via `tabulate`) across heterogeneous rows:
 import type { Stage, Table } from "../types";
-export type TableFormatStage = Stage<Table, string>;   // pipeline EXPECTS this shape
+export type TableFormatStage = Stage<Table, string>;   // pipeline terminal stage
 
-// BUT contract:format promises only:
-//     formatTable(rows: Row[]): string      // no `columns` param, no ordering guarantee
+// This stage is backed directly by the (now widened) format contract:
+//     formatTable(table: Table): string      // see contract:format
+// so it runs as:  { name: "format-table", run: (t: Table) => formatTable(t) }
 //
-// ┌─ THE CONFLICT ────────────────────────────────────────────────────────────────┐
-// │ A developer told to "wire the pipeline to the table formatter" cannot satisfy   │
-// │ BOTH stable contracts at once:                                                  │
-// │   • format has no parameter to receive `Table.columns` → the pipeline's column- │
-// │     ordering guarantee is silently lost.                                        │
-// │   • Resolving it means EITHER widening contract:format to accept `Table`,        │
-// │     OR relaxing contract:pipeline to emit `Row[]` and drop the ordering          │
-// │     guarantee. Both are cross-module contract changes.                          │
-// │                                                                                  │
-// │ Per Agent Rules (CLAUDE.framework.md): developers may TIGHTEN a contract inline, │
-// │ but WIDENING → escalate to the Architect. This contract is `status:draft`, so    │
-// │ the developer agent must STOP and escalate rather than implement. (Scenario 3.)  │
-// └──────────────────────────────────────────────────────────────────────────────┘
+// ┌─ RESOLUTION (Option A) ─────────────────────────────────────────────────────────┐
+// │ `contract:format` was WIDENED so `formatTable` accepts a `Table` instead of       │
+// │ `Row[]`: header/serialization order from `table.columns`, data from `table.rows`. │
+// │   • `Table` is an already-exported shared type → no new dependency.               │
+// │   • The pipeline's column-ordering guarantee is preserved END TO END:             │
+// │     tabulate → Table (ordered columns) → formatTable(table) → string.             │
+// │ Rejected: relaxing contract:pipeline to emit Row[] (drops the ordering guarantee, │
+// │ demotes Table to a dead type); and a local adapter passing only table.rows        │
+// │ (type-checks but discards columns → breaks the guarantee at runtime).             │
+// │                                                                                    │
+// │ This was the architect decision the draft status forced via STOP-and-escalate     │
+// │ (scenario 3). The contract is now stable — safe to implement against.             │
+// └────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -257,8 +268,8 @@ export function run(argv: string[], stdin: string): CliResult;
 | parse | developer | `01_Project/src/parse/*` | 3 parsers, independent. Gotchas G1 (CSV BOM), G2 (NDJSON newline). BUG-003 (parseJSON empty). |
 | validate | developer | `01_Project/src/validate/*` | Independent of all others. |
 | transform | developer | `01_Project/src/transform/*` | 8 operators, fully independent — the fan-out surface. Gotcha G3 (purity). BUG-001 (dedupe). |
-| format | developer | `01_Project/src/format/*` | 3 formatters. Half of the contested contract. BUG-002 (formatCSV escaping). |
-| pipeline | architect+developer | `01_Project/src/pipeline/*` | Composition engine. Owns the contested `pipeline-format` wiring. |
+| format | developer | `01_Project/src/format/*` | 3 formatters. Half of the formerly-contested `pipeline-format` contract (resolved — D5). BUG-002 (formatCSV escaping). |
+| pipeline | architect+developer | `01_Project/src/pipeline/*` | Composition engine. Owns the `pipeline-format` wiring (formerly contested; resolved — D5). |
 | cli | developer | `01_Project/src/cli/*` | Thin; depends on parse/transform/format. Build last. |
 
 ## Design Tokens

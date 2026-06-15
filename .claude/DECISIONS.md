@@ -3,6 +3,25 @@
 <!-- Newest decisions at the top. During Cold Start, agents read only the last 10 entries. -->
 <!-- When this file exceeds ~50 entries, move older decisions to .claude/framework/docs/archives/decisions-archive.md -->
 
+## 2026-06-14 — D5: resolve contested `contract:pipeline-format` by widening `contract:format` to accept `Table`
+**Decision:** Adopt **Option A** — widen `contract:format` so `formatTable` accepts a
+`Table` (header order from `table.columns`, data from `table.rows`) instead of `Row[]`.
+The pipeline's terminal stage stays `TableFormatStage = Stage<Table, string>`, now backed
+by `formatTable(table: Table)`, and `contract:pipeline-format` flips `status:draft → stable`.
+This resolves the type-level contradiction the developer escalated on TASK-007.
+**Rationale:** A is the minimal semantically-correct fix. `Table` is already an exported
+shared type, so widening `format` adds **no new dependency** and preserves the pipeline's
+column-ordering guarantee end-to-end. Option B (relax `contract:pipeline` to emit `Row[]`)
+was rejected because it silently drops the stated ordering guarantee and demotes `Table` to
+a dead type. Option C (a local adapter that passes `table.rows` and discards `columns`) was
+ruled out: it type-checks but breaks the guarantee at runtime — exactly the silent
+correctness loss the contract exists to prevent.
+**Context:** Triggered by the developer's STOP-and-escalate on TASK-007, the
+deliberately-contested contract created in D2. This is the architect-decision resolution
+that `SCENARIOS.md` scenario 3 is designed to exercise. NOTE: applying this resolution
+disarms scenario 3 — re-running it requires restoring the seeded baseline
+(`git checkout -- .claude/ECOSYSTEM.md .claude/DECISIONS.md`).
+
 ## 2026-06-14 — D4: `parseJSON` and `formatJSON` ship as correct reference impls
 **Decision:** Of all module functions, exactly two are implemented correctly at baseline
 (`parseJSON` happy path, `formatJSON`); everything else is a stub or a seeded bug.

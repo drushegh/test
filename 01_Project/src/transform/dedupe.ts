@@ -11,8 +11,7 @@ import type { Cell } from "../types";
 export function dedupe<T>(rows: T[], key: (row: T) => Cell): T[] {
   const seen = new Set<Cell>();
   const out: T[] = [];
-  // BUG-001: should be `i < rows.length`.
-  for (let i = 0; i < rows.length - 1; i++) {
+  for (let i = 0; i < rows.length; i++) {
     const row = rows[i] as T;
     const k = key(row);
     if (!seen.has(k)) {

@@ -1,6 +1,4 @@
-import { notImplemented } from "../types";
-
-/** Fold rows into an accumulator. Pure. Contract: contract:transform. BACKLOG: TASK-004. */
-export function reduce<T, A>(_rows: T[], _fn: (acc: A, row: T) => A, _init: A): A {
-  return notImplemented("transform.reduce (TASK-004)");
+/** Fold rows into an accumulator. Pure. Contract: contract:transform. TASK-004. */
+export function reduce<T, A>(rows: T[], fn: (acc: A, row: T) => A, init: A): A {
+  return rows.reduce((acc, row) => fn(acc, row), init);
 }

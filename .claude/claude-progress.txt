@@ -13,6 +13,30 @@
 <!-- When detailed entries exceed ~30, move older ones to .claude/framework/docs/archives/progress-archive.txt and regenerate the Rolling Summary. -->
 <!-- Each entry must include: task IDs touched, files created/modified, tests status, contract changes, decisions made, and a clear "next session should" directive. -->
 
+### 2026-06-14 — Multi-agent demo run (scenarios 1 + 3): TASK-001 Done, TASK-007 escalation resolved
+- **Task IDs touched:** TASK-001 (Done), TASK-007 (escalated → contract resolved via D5; impl still a stub).
+- **Purpose:** User asked to "run a test" producing visible changes across contracts, decisions, gotchas,
+  progress, and tasks while exercising real subagents (this repo is the harvey test bed). Ran SCENARIOS.md
+  scenario 1 (lifecycle baseline) and scenario 3 (contract escalation) together to touch every surface.
+- **Agents used (6 subagents, 4 rounds):**
+  - R1 ∥ developer → TASK-001 parseCSV implemented (3/3 green, G1/BOM handled, incremented G1 in GOTCHAS);
+        developer → TASK-007 read all 3 contracts, hit the type conflict, **STOPped and escalated** (no code) — scenario 3 trigger fired correctly.
+  - R2 architect → resolved the escalation: **D5** (widen `contract:format` to accept `Table`; reject relax-pipeline + silent-adapter options). Edited DECISIONS.md + ECOSYSTEM.md.
+  - R3 ∥ tester → verified parseCSV (3/3, contract-compliant); reviewer → REQUEST-CHANGES, found edge-case bugs the thin suite missed (quoted-final-field header corruption; empty-delimiter hang) + stale "contested" language left by the architect.
+  - R4 developer → fixed the confirmed findings (`afterQuotedField` flag; delimiter validated to single char) + added 7 regression tests → **10/10 green, tsc clean.**
+- **Files created/modified:**
+  - `01_Project/src/parse/parseCSV.ts` (implemented + fixed), `01_Project/tests/parse/parseCSV.test.ts` (3 → 10 tests).
+  - `.claude/ECOSYSTEM.md` — `contract:format` widened to `formatTable(table: Table)`; `contract:pipeline-format` draft→**stable**; preamble + module-boundary table de-contested for consistency.
+  - `.claude/DECISIONS.md` — **D5** (resolve contested contract).
+  - `.claude/GOTCHAS.md` — G1 encounter 0→1; **G4** (quoted-final-field spurious empty cell) + **G5** (empty/multi-char delimiter `indexOf` hang) added from review.
+  - `.claude/TASKS.md`, `.claude/STATUS.md`, this file.
+- **Tests status:** `tests/parse/parseCSV.test.ts` 10/10 green; `tsc --noEmit` clean. Rest of suite still red by design (backlog).
+- **Contract changes:** `contract:format` widened (D5); `contract:pipeline-format` resolved to stable (D5). Both prose + fenced blocks synced.
+- **Decisions made:** D5 (Option A — widen format over relaxing pipeline or a silent adapter).
+- **Demo caveat:** this run intentionally **disarms scenario 3** (contract no longer contested) and implements parseCSV.
+  All changes are UNCOMMITTED. **Next session should:** decide keep-vs-revert — `git checkout -- .` restores the full
+  seeded baseline (re-arms scenario 3, reverts parseCSV to a stub); or commit with task IDs (TASK-001 / TASK-007).
+
 ### 2026-06-14 — /analyse: datakit harvey test bed (spec + contracts + backlog + scaffold)
 - **Task IDs touched:** created the whole datakit backlog (TASK-001..009, BUG-001..003). None implemented (by design).
 - **Purpose:** Run /analyse on this repo to make it a dedicated TEST BED for *harvey* (a multi-agent

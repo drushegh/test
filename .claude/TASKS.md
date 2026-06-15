@@ -1,7 +1,9 @@
 # Task Board
 
-Last updated: 2026-06-14 by architect (/analyse) — datakit test-bed backlog created. All
-feature tasks are unimplemented stubs by design; this board is the fuel harvey burns.
+Last updated: 2026-06-14 (orchestrator demo run) — TASK-001 driven to Done through the full
+lifecycle; TASK-007 escalated and its contested contract resolved (D5). Originally created
+2026-06-14 by architect (/analyse). Most feature tasks remain unimplemented stubs by design;
+this board is the fuel harvey burns. **To re-arm the seeded scenarios, `git checkout -- .`**
 
 > **Test-bed note:** these tasks exist to be *watched* being worked, not to ship a
 > product. Sizing, dependencies, and the one contested task are tuned for harvey's
@@ -29,11 +31,6 @@ _(none — claim from Todo)_
 > `src/types.ts`) → up to **6 can run in parallel**. TASK-007 needs 005+006. TASK-008
 > needs 001+004+005. TASK-009 needs everything.
 
-#### TASK-001 — parse: CSV parser  [P1]
-- **Contract:** `contract:parse` (status:stable) · **File:** `01_Project/src/parse/parseCSV.ts`
-- **Test:** `tests/parse/parseCSV.test.ts` (currently red) · **Gotcha:** G1 (strip UTF-8 BOM)
-- **Scenario:** 1 (lifecycle baseline). Header row → keys; quoted fields keep commas.
-
 #### TASK-002 — parse: NDJSON parser  [P2]
 - **Contract:** `contract:parse` (status:stable) · **File:** `01_Project/src/parse/parseNDJSON.ts`
 - **Test:** `tests/parse/parseNDJSON.test.ts` (red) · **Gotcha:** G2 (trailing newline)
@@ -59,13 +56,14 @@ _(none — claim from Todo)_
 - **Test:** `tests/pipeline/pipeline.test.ts` (red). Implement `compose` + `tabulate`
   (the column-ordering guarantee). Needed before TASK-007.
 
-#### TASK-007 — pipeline → table formatter wiring  ⚠ CONTESTED  [P1, BLOCKED]
-- **Contract:** `contract:pipeline-format` (**status:draft — CONTESTED**) · **File:** `01_Project/src/pipeline/formatStage.ts`
+#### TASK-007 — pipeline → table formatter wiring  ✅ CONTRACT RESOLVED (D5)  [P1]
+- **Contract:** `contract:pipeline-format` (**status:stable** — resolved via D5) · **File:** `01_Project/src/pipeline/formatStage.ts`
 - **Test:** `tests/pipeline/formatStage.test.ts` (`it.todo`) · **Depends on:** TASK-005, TASK-006
-- **Scenario:** 3 (contract mismatch / escalation). **Expected outcome is NOT code** —
-  the developer must hit the conflict (pipeline wants `Stage<Table,string>`; format promises
-  `formatTable(rows: Row[])`), STOP, and escalate to the architect to decide which contract
-  to widen. Implementing silently is a contract violation.
+- **Scenario:** 3 (contract mismatch / escalation) — **exercised this session.** The developer
+  hit the conflict (pipeline wants `Stage<Table,string>`; format promised `formatTable(rows: Row[])`),
+  STOPped, and escalated. The architect resolved it (D5): widened `contract:format` to
+  `formatTable(table: Table)`. **No implementation written** (still a stub — needs TASK-005/006).
+  Note: this disarms scenario 3 for replay — `git checkout -- .` restores the contested baseline.
 
 #### TASK-008 — cli: runner  [P3]
 - **Contract:** `contract:cli` (status:stable) · **File:** `01_Project/src/cli/index.ts`
@@ -78,11 +76,19 @@ _(none — claim from Todo)_
 
 ### Blocked
 
-- **TASK-007** — blocked on resolving contested `contract:pipeline-format` (architect decision).
+_(none — TASK-007's contested contract was resolved this session via D5; it is now unblocked
+but still depends on TASK-005 + TASK-006 before it can be implemented.)_
 
 ### Done
 
 <!-- When Done exceeds ~20 items, move older entries to .claude/framework/docs/archives/tasks-archive.md -->
+
+#### TASK-001 — parse: CSV parser  [P1] ✅ Done (2026-06-14)
+- **File:** `01_Project/src/parse/parseCSV.ts` · **Test:** `tests/parse/parseCSV.test.ts` (10/10 green) · `tsc --noEmit` clean.
+- **Lifecycle:** developer implemented → independent reviewer returned REQUEST-CHANGES (found
+  G4 quoted-final-field corruption + G5 empty-delimiter hang, both confirmed) → developer fixed
+  (`afterQuotedField` flag; delimiter validated) + added 7 regression tests → re-verified green.
+- **Gotchas:** G1 (BOM) handled; **G4 & G5 newly logged** from review. **Commit:** _(uncommitted — demo run)_.
 
 ---
 

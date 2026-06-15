@@ -1,6 +1,4 @@
-import { notImplemented } from "../types";
-
-/** Flatten one level of nesting. Pure. Contract: contract:transform. BACKLOG: TASK-004. */
-export function flatten<T>(_rows: T[][]): T[] {
-  return notImplemented("transform.flatten (TASK-004)");
+/** Flatten one level of nesting. Pure. Contract: contract:transform. TASK-004. */
+export function flatten<T>(rows: T[][]): T[] {
+  return ([] as T[]).concat(...rows);
 }

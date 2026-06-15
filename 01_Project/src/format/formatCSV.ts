@@ -13,9 +13,12 @@ export function formatCSV(rows: Row[]): string {
   if (rows.length === 0) return "";
   const cols = Object.keys(rows[0] as Row);
   const lines = [cols.join(",")];
+  const quote = (v: string): string =>
+    v.includes(",") || v.includes('"') || v.includes("\n")
+      ? `"${v.replace(/"/g, '""')}"`
+      : v;
   for (const row of rows) {
-    // BUG-002: no quoting/escaping of cells.
-    lines.push(cols.map((c) => String((row as Row)[c] ?? "")).join(","));
+    lines.push(cols.map((c) => quote(String((row as Row)[c] ?? ""))).join(","));
   }
   return lines.join("\n");
 }
