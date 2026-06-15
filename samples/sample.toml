@@ -1,0 +1,40 @@
+# sample.toml — a sample TOML file for testing
+# Demonstrates the common TOML constructs: tables, arrays, nested tables,
+# arrays of tables, and the main scalar types.
+
+title = "TOML Example"
+enabled = true
+
+[owner]
+name = "Ada Lovelace"
+email = "ada@example.com"
+joined = 1979-05-27T07:32:00Z
+
+[server]
+host = "127.0.0.1"
+port = 8080
+max_connections = 512
+timeout_seconds = 30.5
+
+[database]
+url = "postgres://localhost/app"
+pool_size = 16
+enabled_extensions = ["uuid-ossp", "pg_trgm", "citext"]
+
+[logging]
+level = "info"
+formats = ["json", "text"]
+
+[[features]]
+name = "search"
+enabled = true
+weight = 1.0
+
+[[features]]
+name = "export"
+enabled = false
+weight = 0.5
+
+[limits]
+# Inline table
+rate = { requests = 100, per_seconds = 60 }
