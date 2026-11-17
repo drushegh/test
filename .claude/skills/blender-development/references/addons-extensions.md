@@ -8,11 +8,11 @@ repositories.
 
 ```toml
 schema_version = "1.0.0"
-id = "opensky_pipeline_tools"
+id = "pipeline_tools"
 version = "1.0.0"
-name = "OpenSky Pipeline Tools"
+name = "Pipeline Tools"
 tagline = "Batch export and validation for engine pipelines"
-maintainer = "Damien Rushe <drushe@openskydata.com>"
+maintainer = "Your Name <you@example.com>"
 type = "add-on"
 license = ["SPDX:GPL-3.0-or-later"]
 blender_version_min = "4.2.0"
@@ -68,7 +68,7 @@ class OSP_OT_batch_export(bpy.types.Operator):
         return {'FINISHED'}
 
 class OSP_PT_panel(bpy.types.Panel):
-    bl_label = "OpenSky Pipeline"
+    bl_label = "Pipeline"
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'
     bl_category = "Pipeline"

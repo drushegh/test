@@ -27,7 +27,7 @@ the Electron layer — processes, IPC, security, packaging.
 MAIN (Node.js + Electron APIs)          — fs, native modules, dialogs, protocol handlers
   │  ipcMain.handle / webContents.send
 PRELOAD (contextBridge)                 — the ONLY bridge; typed, allowlisted API
-  │  window.electron.*
+  │  window.electronAPI.*
 RENDERER (browser context, React/web)   — NO Node.js access, ever
 ```
 
@@ -37,9 +37,12 @@ preload API. Details: [references/ipc-and-security.md](references/ipc-and-securi
 ## Security Non-Negotiables
 
 ```typescript
+// ESM main ("type": "module", Electron 28+): __dirname does not exist —
+// use import.meta.dirname (Electron 30+ / Node 20.11+) or
+// dirname(fileURLToPath(import.meta.url)). CJS main: __dirname is fine.
 new BrowserWindow({
   webPreferences: {
-    preload: join(__dirname, "preload.cjs"),
+    preload: join(import.meta.dirname, "preload.cjs"),
     contextIsolation: true,    // REQUIRED — isolates preload from renderer
     nodeIntegration: false,    // REQUIRED — no Node in renderer
     sandbox: true,             // default ON; disable ONLY for native modules, documented
@@ -52,9 +55,11 @@ new BrowserWindow({
 - **Validate inputs in every `ipcMain` handler** — the renderer is
   untrusted (XSS in the webview becomes RCE if handlers are sloppy). No
   handler may execute arbitrary strings or traverse caller-supplied paths.
-- **Secrets**: OS keychain (`keytar`/`safeStorage`) — never plaintext
-  config or localStorage. No hardcoded encryption keys — derive
-  (e.g. machine ID) or use safeStorage.
+- **Secrets**: Electron's `safeStorage` (OS keychain/DPAPI/libsecret-backed)
+  — never plaintext config or localStorage. `keytar` is archived
+  (unmaintained since 2022); don't add it to new apps. A hardcoded or
+  machine-ID-derived electron-store `encryptionKey` is obfuscation, not
+  security — any local process can recompute it.
 - External links via `shell.openExternal` after URL validation; block
   arbitrary navigation; CSP configured for production.
 
@@ -63,9 +68,9 @@ new BrowserWindow({
 | Symptom | Root cause | Fix |
 |---|---|---|
 | Works in terminal, fails from Finder/Explorer | `process.cwd()` is `/` or `System32` when GUI-launched | `app.getPath('userData')` / `app.getAppPath()` — never cwd or bundle-time `__dirname` for runtime files |
-| `NODE_MODULE_VERSION` mismatch | Native module built for system Node, not Electron's | `electron-rebuild` (postinstall) / `npmRebuild: true` |
+| `NODE_MODULE_VERSION` mismatch | Native module built for system Node, not Electron's | `@electron/rebuild` (postinstall; the old `electron-rebuild` package is deprecated) / `npmRebuild: true` |
 | Native module won't load in package | Bundled into JS or trapped in asar | `external:` in bundler + `asarUnpack` (or `asar: false`) + include in `files` |
-| `window.electron` undefined | Renderer ran before preload finished | Optional-chain + existence check in components |
+| `window.electronAPI` undefined | Preload never ran or failed: wrong `preload` path (see ESM note above), preload threw (check the DevTools console / main log), ESM preload under `sandbox: true` (sandboxed preloads must be CJS), `exposeInMainWorld` name ≠ the name the renderer reads, or the page is open in a plain browser | Fix the preload load; the preload runs before any page script, so this is never a timing race. Keep an existence guard only for browser-dev mode |
 | Crash on `sandbox: true` | Native `.node` module in preload chain | `sandbox: false` with documented trade-off, or pure-JS/WASM alternative |
 | Spawned CLI not found in packaged app | GUI apps don't inherit shell PATH | Resolve absolute binary paths; check login-shell PATH explicitly |
 | OAuth callback lost | State in memory, app restarted; protocol not registered | Persist state (electron-store), `setAsDefaultProtocolClient` + single-instance lock |

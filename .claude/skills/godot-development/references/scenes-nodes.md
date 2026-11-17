@@ -42,7 +42,20 @@ func shoot() -> void:
 ```
 
 Spawned things usually parent to the level, NOT the spawner (they
-shouldn't die/move with it).
+shouldn't die/move with it). The same goes for a **follow-camera rig**:
+make it a sibling of the player that follows a target, not a child. A
+child rig inherits the player's facing rotation, so the camera swings
+in front when the player turns and the controls feel inverted.
+
+## `.tscn` text traps (hand-edited scenes)
+
+- Group membership belongs in the node header:
+  `[node name="Spawn" type="Marker3D" parent="." groups=["respawn"]]`.
+  A separate `groups = ["respawn"]` property line under the node is
+  **silently ignored**, and `get_nodes_in_group()` returns empty.
+- After hand-editing, verify at runtime (print the group size, the
+  resolved node) rather than trusting that the file loaded without
+  error.
 
 ## Autoloads (singletons)
 

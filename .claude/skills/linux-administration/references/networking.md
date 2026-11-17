@@ -47,7 +47,14 @@ control on sensitive hosts, restrict outbound too. nftables directly
 
 ## SSH server hardening
 
-`/etc/ssh/sshd_config` (or a drop-in in `sshd_config.d/`):
+sshd uses the **first** value it reads for each keyword, and most current
+distros (Debian/Ubuntu, Fedora/RHEL 9+) start `sshd_config` with
+`Include /etc/ssh/sshd_config.d/*.conf`, read in lexical order. So a setting
+at the bottom of `sshd_config` loses to any drop-in, and cloud images often
+ship one (e.g. cloud-init's `50-cloud-init.conf` with
+`PasswordAuthentication yes`). Put hardening in an early-sorting drop-in such
+as `/etc/ssh/sshd_config.d/00-hardening.conf` (or remove/override the
+conflicting drop-in), then check the *effective* config with `sshd -T`:
 
 ```
 PermitRootLogin no
@@ -60,6 +67,8 @@ X11Forwarding no
 
 ```bash
 sudo sshd -t                 # validate config BEFORE reloading
+sudo sshd -T | grep -Ei '^(permitrootlogin|passwordauthentication|kbdinteractiveauthentication) '
+                             # effective values after Include/first-match
 sudo systemctl reload ssh    # (ssh or sshd depending on distro)
 ```
 

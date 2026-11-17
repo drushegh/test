@@ -36,7 +36,8 @@ class ProductSpider(scrapy.Spider):
             yield {
                 "name": card.css("h2::text").get(),
                 "price": card.css(".price::text").get(),
-                "url": response.urljoin(card.css("a::attr(href)").get()),
+                # guard: urljoin(None) silently returns the *page* URL
+                "url": response.urljoin(href) if (href := card.css("a::attr(href)").get()) else None,
             }
         next_page = response.css("a.next::attr(href)").get()
         if next_page:
@@ -64,21 +65,38 @@ ongoing.
 
 Scrapy's HTTP fetch can't run JS. **scrapy-playwright** lets a spider opt
 specific requests into a Playwright-rendered fetch via request meta, while the
-rest stay fast HTML requests:
+rest stay fast HTML requests. It only works once the handler and the asyncio
+reactor are configured — without them `meta={"playwright": True}` is silently
+ignored and you get the un-rendered HTML:
 
 ```python
+# settings.py
+DOWNLOAD_HANDLERS = {
+    "http": "scrapy_playwright.handler.ScrapyPlaywrightDownloadHandler",
+    "https": "scrapy_playwright.handler.ScrapyPlaywrightDownloadHandler",
+}
+TWISTED_REACTOR = "twisted.internet.asyncioreactor.AsyncioSelectorReactor"  # already Scrapy's default
+
+# in the spider
 yield scrapy.Request(url, meta={"playwright": True}, callback=self.parse)
 ```
+
+On Windows, Playwright's driver needs a subprocess-capable (Proactor) loop
+while the reactor needs a Selector loop; scrapy-playwright handles this by
+running Playwright in a separate thread — check its README if it misbehaves.
 
 Only flag the pages that need rendering — rendering every page throws away
 Scrapy's speed advantage (see `dynamic-playwright.md`).
 
 ## Note: Twisted vs asyncio
 
-Scrapy is built on **Twisted**, which predates and sits awkwardly beside the
-modern **asyncio** ecosystem (httpx, Playwright are asyncio-native). Scrapy
-supports an asyncio reactor and scrapy-playwright bridges the gap, but expect
-some friction. For greenfield async-heavy crawls, weigh Scrapy against
+Scrapy is built on **Twisted**, but the asyncio reactor is now the default
+(`TWISTED_REACTOR` defaults to `AsyncioSelectorReactor`), so `async def`
+callbacks can `await` asyncio libraries directly; recent releases also offer
+an experimental reactorless mode (`TWISTED_REACTOR_ENABLED = False`). Residual
+friction: Twisted `Deferred`s must be wrapped (`maybe_deferred_to_future()`)
+before awaiting, and some components still assume Twisted. For greenfield
+async-heavy crawls, weigh Scrapy against
 asyncio-native alternatives (e.g. Crawlee) — but Scrapy remains the most
 batteries-included crawl framework, and its pipeline/middleware model is hard
 to beat for structured crawls.

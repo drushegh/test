@@ -24,6 +24,38 @@ expensive — proxy hitboxes (invisible simple meshes) are the pro
 move for characters/complex models. Throttle hover raycasts; touch
 needs bigger proxies than mouse.
 
+**Thin or stacked geometry picks the neighbour.** Raycasting thin
+slabs (stacked layers, shelves, cables) often hits the adjacent item.
+Give each pickable item an invisible, deliberately fat hit proxy and
+raycast only the proxies. `Raycaster` does not check `visible` (it
+tests `layers` only, verified at r186), so a proxy with
+`visible = false` still picks and costs no draw call. A
+`colorWrite: false, depthWrite: false` proxy also works but is still
+drawn. Map proxy → item via `userData`.
+
+**Click vs drag with OrbitControls.** `OrbitControls` dispatches
+`'start'` on pointer-down (and on every wheel tick) before any
+movement, so "the user grabbed the camera" can't be read from
+`'start'` alone. Every click looks like a camera grab. Classify
+yourself:
+
+```javascript
+let down = null;
+canvas.addEventListener('pointerdown', (e) => { down = { x: e.clientX, y: e.clientY }; });
+canvas.addEventListener('pointerup', (e) => {
+  if (!down) return;
+  const moved = Math.hypot(e.clientX - down.x, e.clientY - down.y);
+  down = null;
+  if (moved <= 6) pick(e);            // a click: raycast
+  else markManualCameraIntent();      // a drag: the user moved the camera
+});
+for (const t of ['pointercancel', 'pointerleave']) canvas.addEventListener(t, () => { down = null; });
+canvas.addEventListener('wheel', markManualCameraIntent, { passive: true });
+```
+
+Use the same distinction before cancelling auto-rotate or a guided
+camera tour, so a click doesn't count as "the user took over".
+
 ## Controls (three/addons)
 
 | Control | Use |
@@ -64,6 +96,16 @@ Delta-time everything (`pos += speed * delta`); damp toward targets
 (`THREE.MathUtils.damp`) instead of lerping by fixed factors for
 frame-rate independence; gsap/tween.js fine for UI-ish moves —
 drive them from the single render loop, not parallel rAFs.
+
+**Paused clocks and seeking break `dt`-scaled smoothing.** When a
+timeline is paused or scrubbed, `dt` can be 0 (or negative on a seek
+backwards), and smoothing with `k ∝ dt` then freezes stale state on
+screen. Drive *simulation* from the timeline, but give *smoothing* a
+nominal dt (for example `1/60`) whenever the real one is ≤ 0. Also,
+`t % cycle` accumulates float error at cycle boundaries, so a seek to
+"the start of step N" can land in step N−1. Seek to a time a small
+epsilon *inside* the target window, and derive the step index from the
+seek target rather than from the modulo.
 
 ## Interaction accessibility (web context)
 

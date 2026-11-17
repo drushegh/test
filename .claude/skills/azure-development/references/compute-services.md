@@ -22,8 +22,11 @@ shiny tier is not an architecture.
   per function; idempotent handlers (every trigger is at-least-once).
 - Hosting: Consumption (cheap, cold starts), Flex Consumption (VNet +
   faster scale), Premium (no cold start, VNet), Dedicated (App Service
-  plan reuse). VNet integration and Key Vault references need
-  Premium/Flex or better.
+  plan reuse). VNet integration needs Flex Consumption, Premium or
+  Dedicated. Key Vault references (`@Microsoft.KeyVault(...)` app
+  settings) work on every plan, including Consumption, via the app's
+  managed identity — only a network-restricted vault additionally needs
+  VNet integration (so Flex/Premium/Dedicated).
 - Configuration via app settings (which are environment variables);
   local parity via `local.settings.json` (never committed).
 - Durable Functions for orchestration: deterministic orchestrators (no

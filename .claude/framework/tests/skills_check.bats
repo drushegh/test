@@ -115,20 +115,64 @@ load update_helpers
   grep -q "PENDING-SUGGESTION" "$SCONSUMER/.claude/.skills-suggestion.md"
 }
 
-@test "skills-check: malformed .skills-version (no URL) → exit 2" {
+@test "skills-check: no URL, no bundle (default public mode) polls the default upstream" {
   build_skills_upstream
   build_skills_consumer "python"
+  # No URL and no vendored skills/ is DEFAULT mode (skills-sync pulls the public
+  # catalogue and pins its HEAD), so skills-check polls that catalogue —
+  # redirected to the local fixture via SKILLS_DEFAULT_UPSTREAM_URL (hermetic).
   printf 'SKILLS_SELECTED="python"\n' > "$SVERSION"
-  run skills_check
-  [ "$status" -eq 2 ]
+  SKILLS_DEFAULT_UPSTREAM_URL="$SKILLS_UPSTREAM" run skills_check
+  [ "$status" -eq 0 ]
+  [ -f "$(SFLAG)" ]
+  # Pinned to the default upstream's HEAD → up to date: flag cleared, silent.
+  printf 'SKILLS_PINNED_SHA=%s\n' "$SKILLS_UPSTREAM_SHA" >> "$SVERSION"
+  rm -f "$SCONSUMER/.claude/telemetry/.last-skills-check"
+  SKILLS_DEFAULT_UPSTREAM_URL="$SKILLS_UPSTREAM" run skills_check
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+  [ ! -f "$(SFLAG)" ]
 }
 
-@test "skills-check: live up-to-date run bumps SKILLS_LAST_CHECKED" {
+@test "skills-check: bundle mode (no URL, bundled skills/ present) is SILENT, exit 0 (Phase-B)" {
+  build_skills_upstream
+  build_skills_consumer "python"
+  # Bundle mode: URL-less .skills-version + an in-repo bundled catalogue. This is
+  # the exact shape the suggestion flag tells users to create — it must NOT be
+  # treated as malformed, and there is no remote to poll → silent.
+  mkdir -p "$SCONSUMER/skills/python"
+  printf 'x\n' > "$SCONSUMER/skills/python/SKILL.md"
+  printf 'SKILLS_SELECTED="python"\n' > "$SVERSION"
+  run skills_check
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+  [ ! -f "$(SFLAG)" ]
+}
+
+@test "skills-check: bundle mode clears a STALE flag left over from clone mode (Phase-B)" {
+  build_skills_upstream
+  build_skills_consumer "python"
+  # A prior clone-mode config left a pending update flag; switching to bundle
+  # mode must not leave it lingering forever — the bundle-mode early exit
+  # returns before the normal clear-on-up-to-date path, so it needs its own clear.
+  echo "stale flag from clone mode" > "$(SFLAG)"
+  mkdir -p "$SCONSUMER/skills/python"
+  printf 'x\n' > "$SCONSUMER/skills/python/SKILL.md"
+  printf 'SKILLS_SELECTED="python"\n' > "$SVERSION"
+  run skills_check
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+  [ ! -f "$(SFLAG)" ]
+}
+
+@test "skills-check: live up-to-date run bumps the gitignored throttle marker, never .skills-version" {
   build_skills_upstream
   build_skills_consumer "python"
   set_skills_pin "$SKILLS_UPSTREAM_SHA"
+  before="$(cat "$SVERSION")"
   run skills_check
   [ "$status" -eq 0 ]
-  grep -q "^SKILLS_LAST_CHECKED=" "$SVERSION"
-  ! grep -q "1970-01-01" "$SVERSION"
+  [ -f "$SCONSUMER/.claude/telemetry/.last-skills-check" ]
+  [ "$(cat "$SVERSION")" = "$before" ]
+  ! grep -q "^SKILLS_LAST_CHECKED=" "$SVERSION" || false
 }

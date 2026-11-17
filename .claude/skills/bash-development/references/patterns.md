@@ -7,8 +7,11 @@
 set -Eeuo pipefail
 IFS=$'\n\t'
 
-readonly SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
-readonly SCRIPT_NAME="$(basename -- "${BASH_SOURCE[0]}")"
+# declare-then-assign: a combined `readonly X=$(...)` masks the command's
+# exit status (SC2155), so keep the assignment on its own line.
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+SCRIPT_NAME="$(basename -- "${BASH_SOURCE[0]}")"
+readonly SCRIPT_DIR SCRIPT_NAME
 
 trap 'log_error "failed at line $LINENO"' ERR
 trap 'cleanup' EXIT
@@ -126,8 +129,10 @@ some_tool "${args[@]}"                     # then expand — no eval, no quoting
 ## Temp Files
 
 ```bash
-readonly TMP_DIR=$(mktemp -d)
-trap 'rm -rf -- "$TMP_DIR"' EXIT INT TERM
+TMP_DIR=$(mktemp -d); readonly TMP_DIR   # split: `readonly X=$(...)` hides
+                                         # mktemp's exit status (SC2155)
+trap 'rm -rf -- "$TMP_DIR"' EXIT          # cleanup on EXIT only
+trap 'exit 130' INT; trap 'exit 143' TERM  # signals -> exit -> EXIT trap
 chmod 700 "$TMP_DIR"
 ```
 

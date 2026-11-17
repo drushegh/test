@@ -70,8 +70,11 @@ RunUAT BuildCookRun -project=MyGame.uproject -platform=Win64 \
   pipelines (parallel per-platform nodes, test gates).
 - CI essentials: shared **Derived Data Cache (DDC)** (network/cloud
   DDC) or cooks take hours; incremental builds on persistent agents
-  or warm caches; run Automation tests (`-ExecCmds="Automation
-  RunTests MyGame"`) as a gate; binary asset validation
+  or warm caches; run Automation tests as a gate (`UnrealEditor-Cmd
+  MyGame.uproject -ExecCmds="Automation RunTests MyGame"
+  -TestExit="Automation Test Queue Empty" -unattended -nullrhi
+  -ReportExportPath=...` — without `-TestExit` the editor never
+  exits and the CI job hangs); binary asset validation
   (`EditorValidator` subclasses) on PRs.
 - Build hosting/agents wiring → `devops-development`; the UE
   specifics (UAT calls, DDC, test invocation) stay here.

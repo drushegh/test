@@ -74,6 +74,13 @@ var order = await GetOrderById(db, orderId);   // skips query compilation
 | `.Include()` then `.Select()` | Include silently ignored | Projection alone fetches what it names |
 | `.ToList()` inside `Select()` | Nested queries | Project all the way down |
 | String concat into `FromSqlRaw` | SQL injection | `FromSqlInterpolated` (parameterised) |
+| `DateTimeOffset`/`decimal`/`TimeSpan`/`ulong` compared or ordered on **SQLite** | Provider supports equality only — `InvalidOperationException` ("could not be translated") at runtime | Store UTC `DateTime` (Microsoft's recommendation) or `HasConversion<long>()`; or filter with translatable predicates, materialise, then order client-side |
+
+**Test against the real provider.** The InMemory provider and LINQ-to-objects
+fakes translate nothing, so provider translation failures (like the SQLite
+row above) only appear against the real database. Run query tests on SQLite
+(in-memory `DataSource=:memory:` with an open connection) or the production
+engine via Testcontainers.
 
 ## Bulk Operations (EF Core 7+)
 

@@ -51,7 +51,7 @@ before writing code.
 - **Never `.unwrap()` or `.expect()` in production runtime code.**
   Acceptable only in: tests; compile-time-proven cases
   (`Regex::new(literal)`) with `.expect("reason")`; startup init
-  (fail-fast). `Result<T, Infallible>` → irrefutable `let Ok(x) = ...;`,
+  (fail-fast). `Result of T, Infallible` → irrefutable `let Ok(x) = ...;`,
   not unwrap.
 - **Hidden panic sources**: `vec[i]` → `.get(i)`; `&s[..n]` splits UTF-8 →
   `s.get(..n)`/`char_indices()`; integer overflow → `checked_*`/
@@ -91,7 +91,8 @@ delete it. Code only used by tests IS dead code.
 ```rust
 // 1. MutexGuard across .await — deadlock + !Send. Scope it:
 let value = {
-    let guard = mutex.lock().unwrap();
+    // poison-tolerant; no .unwrap() (the lint baseline denies it)
+    let guard = mutex.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     guard.clone()
 };                              // guard dropped
 do_async(value).await;          // tokio::sync::Mutex only if you truly must hold
@@ -109,8 +110,9 @@ match state { State::A => a(), State::B => b() }   // no `_ =>`
 
 Also: unbounded channels (no backpressure — bound them and handle full);
 `Rc`/`RefCell` in spawned tasks (`Arc`/`Mutex` or `spawn_local`); serde
-`Option<T>` without `#[serde(default)]` when the key may be absent (null
-and missing are different code paths); `_`-prefixing serde fields (changes
+`Option of T` with `deserialize_with`/`with` but no `#[serde(default)]`
+(plain `Option` fields already treat a missing key as `None`; a custom
+deserialiser drops that, so an absent key becomes an error); `_`-prefixing serde fields (changes
 the wire key — silently breaks deserialisation); no timeout on network
 operations (`tokio::time::timeout`).
 
@@ -143,6 +145,14 @@ operations (`tokio::time::timeout`).
 4. **Before completion**: `cargo clippy --all-targets -- -D warnings`,
    `cargo fmt`, `cargo nextest run` + `cargo test --doc`; zero
    `dead_code`/WIP suppressions; no stray `dbg!`/`println!` debugging.
+   **A green clippy can be a no-op**: cargo's freshness check is
+   mtime-based, so an edit that lands with an older mtime (checkout,
+   restore, copy from another worktree, a tool that preserves timestamps)
+   leaves the crate "fresh" and `-D warnings` exits 0 without analysing
+   it. The tell: `Finished` in well under 2s with **no `Checking <your
+   crate>` line**. Force it (`touch src/lib.rs` or `cargo clean -p
+   <crate>`) and re-run before trusting the gate — and treat a subagent's
+   "clippy clean" as unverified until you see the `Checking` line.
 5. **Unsafe code**: avoid unless genuinely required (FFI, proven hot
    path); every block gets `// SAFETY:` documenting the invariant; run
    Miri on crates containing unsafe.

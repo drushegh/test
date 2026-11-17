@@ -65,7 +65,7 @@ contract; keep types honest.
 - **Check API availability per host** — `context.webAPI` isn't available
   in canvas; consult the reference's "Available for" before using
   anything.
-- **Limit `context.WebApi` calls** — they bill the user's API
+- **Limit `context.webAPI` calls** — they bill the user's API
   entitlement and service-protection limits; batch reads, trim payloads.
 - Responsive via `context.mode.allocatedWidth` +
   `context.client.getFormFactor()` (Desktop/Tablet/Phone) — register

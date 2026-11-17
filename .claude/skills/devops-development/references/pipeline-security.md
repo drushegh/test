@@ -33,8 +33,8 @@ secrets die at commit time.
   feed (Azure Artifacts) with upstream proxy beats raw public pulls
   for governed estates.
 - Build provenance: artifact attestations / SBOM generation where the
-  client's assurance framework asks (increasingly, Irish public sector
-  does).
+  client's assurance framework asks (increasingly common for governed
+  estates).
 
 ## Hostile-input surfaces
 

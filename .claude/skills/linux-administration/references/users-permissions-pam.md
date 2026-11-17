@@ -1,12 +1,15 @@
 # Users, permissions and PAM (admin scale)
 
-The permission *model* is in `linux-development/foundations.md`; this is
+The permission *model* is in
+[`linux-development/references/foundations.md`](../../linux-development/references/foundations.md); this is
 managing it on a multi-user server.
 
 ## Accounts
 
 ```bash
 sudo useradd -m -s /bin/bash -G sudo alice   # create, home, shell, groups
+                                             # admin group: `sudo` on Debian/Ubuntu,
+                                             # `wheel` on RHEL/Fedora/SUSE/Arch
 sudo passwd alice
 sudo usermod -aG docker alice                # add to a supplementary group (append!)
 sudo userdel -r olduser                      # remove + home
@@ -61,8 +64,12 @@ rarely write PAM modules, but you configure policy through it:
 
 - Password quality (`pam_pwquality`) — length/complexity/history.
 - Account lockout after failed attempts (`pam_faillock`).
-- Limits per session (`pam_limits` → `/etc/security/limits.conf`): max open
-  files, processes — relevant when a service hits `ulimit`.
+- Limits per session (`pam_limits` → `/etc/security/limits.conf` and
+  `limits.d/`): max open files, processes — for **interactive/PAM sessions
+  only** (login, sshd, su, sudo). systemd services never pass through PAM,
+  so limits.conf does **not** change a service's `ulimit`: set
+  `LimitNOFILE=` / `LimitNPROC=` in the unit (`systemctl edit <svc>` drop-in,
+  then restart) and confirm with `cat /proc/<pid>/limits`.
 
 Change PAM carefully and **keep a root session open** while testing — a broken
 PAM stack can lock everyone out. Centralised auth (LDAP/Entra ID via SSSD)

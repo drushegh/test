@@ -43,6 +43,27 @@ npm run build && pac code push
 - Dec 2025+ Chromium local-network restrictions can block localhost play;
   grant the browser permission (or policy) when local dev mysteriously
   can't connect.
+- **`pac code add-data-source` can report "Data source added
+  successfully" and then leave nothing behind** (observed). After every
+  add/delete, check `git diff` on the generated `dataSourcesInfo.ts` and
+  `power.config.json`; if they didn't change, the data source isn't there.
+- `pac code` is a preview command group and pac itself goes stale
+  silently: update before debugging odd behaviour (see Tooling in
+  SKILL.md).
+
+## Data-access traps in the generated client
+
+- **Dataverse custom APIs resolve only from the local
+  `dataSourcesInfo` `apis` map.** If `add-data-source` emitted
+  `"apis": {}`, calls fail with a misleading
+  `Operation '<name>' not found` even though the API exists in the
+  environment. Check the generated entry before suspecting the server.
+- **Retrieve-multiple calls page, and ignoring the page token truncates
+  silently.** The generated `retrieveMultipleRecordsAsync` has been seen
+  to default to a 500-row page; drop the `skipToken` (next-page token)
+  and you get the first 500 rows with no error (verify the default in
+  your SDK version). Loop until no token comes back, and assert counts on
+  any table that can exceed one page.
 
 ## Known limitations (verify before committing a design)
 

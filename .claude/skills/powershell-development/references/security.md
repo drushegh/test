@@ -39,7 +39,7 @@ WDAC policy = scripts that can't be tampered with silently.
 | **Script Block Logging** + transcription | Event 4104 — the forensic record; enable via policy on servers (deobfuscated content gets logged) |
 | **AMSI** | Script content scanned by Defender at execution |
 
-These matter in public-sector tenders: name them, don't hand-wave
+These matter in security reviews: name them, don't hand-wave
 "PowerShell is locked down".
 
 ## Input validation

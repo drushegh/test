@@ -20,14 +20,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 METRICS="$PROJECT_ROOT/.claude/telemetry/.hook-metrics"
 
-# Framework-self mode: when the flag is present (upstream framework-dev
-# only), snapshots append to .claude/framework/self/framework-metrics.md so
-# framework-development metrics don't leak into consumer clones.
-if [ -f "$PROJECT_ROOT/.claude/framework-self.flag" ]; then
-  TARGET="$PROJECT_ROOT/.claude/framework/self/framework-metrics.md"
-else
-  TARGET="$PROJECT_ROOT/.claude/framework-metrics.md"
-fi
+# Snapshots append to .claude/framework-metrics.md (root). framework-self
+# redirect retired in TASK-054.
+TARGET="$PROJECT_ROOT/.claude/framework-metrics.md"
 
 if ! command -v jq >/dev/null 2>&1; then
   echo "update-metrics: jq required." >&2
@@ -144,7 +139,7 @@ snapshot_tmp=$(mktemp)
 # immediately after the "## Auto-Generated Snapshots" heading and its
 # HTML comments.
 
-target_tmp=$(mktemp)
+target_tmp=$(mktemp "${TARGET}.XXXXXX")
 awk -v block_file="$snapshot_tmp" '
   BEGIN { inserted = 0 }
 
@@ -161,7 +156,7 @@ awk -v block_file="$snapshot_tmp" '
   # Detect the first line AFTER the heading+comments block in the
   # Auto-Generated Snapshots section. Anchor: an empty line that
   # follows the last "<!-- ... -->" comment of that section.
-  /^### [0-9]{4}-/ {
+  /^### [0-9][0-9][0-9][0-9]-/ {
     if (!inserted) {
       while ((getline line < block_file) > 0) print line
       close(block_file)

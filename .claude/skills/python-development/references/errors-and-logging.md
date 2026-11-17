@@ -51,9 +51,9 @@ def fetch_user_data(user_id: int) -> dict:
     except httpx.HTTPStatusError as e:
         logger.error(f"HTTP error fetching user {user_id}: {e}")
         raise
-    except httpx.ConnectError:
+    except httpx.ConnectError as e:
         logger.error(f"Connection failed for user {user_id}")
-        raise ServiceUnavailableError("API unavailable")
+        raise ServiceUnavailableError("API unavailable") from e
 ```
 
 ## Logging Setup

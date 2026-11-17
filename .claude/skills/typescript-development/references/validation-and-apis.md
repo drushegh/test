@@ -13,9 +13,9 @@ drift apart.
 import { z } from "zod";
 
 const UserSchema = z.object({
-  id: z.string().uuid(),
+  id: z.uuid(),
   name: z.string().min(1),
-  email: z.string().email(),
+  email: z.email(),
   role: z.enum(["admin", "user"]),
 });
 type User = z.infer<typeof UserSchema>;
@@ -23,13 +23,18 @@ type User = z.infer<typeof UserSchema>;
 // safeParse for expected-invalid input (user data) — no exceptions
 const result = UserSchema.safeParse(input);
 if (!result.success) {
-  return { errors: result.error.flatten().fieldErrors };
+  return { errors: z.flattenError(result.error).fieldErrors };
 }
 // result.data is User
 
 // parse for should-be-valid data (own config) — throws on violation
 const config = ConfigSchema.parse(rawConfig);
 ```
+
+These are Zod 4 APIs: top-level format schemas (`z.email()`, `z.uuid()`,
+`z.url()`) replace the deprecated `z.string().email()` chain, and
+`z.flattenError(err)` / `z.treeifyError(err)` replace `err.flatten()` /
+`err.format()`. On a Zod 3 codebase, match what's installed.
 
 Zod schemas double as type guards:
 
@@ -101,14 +106,14 @@ field-level messages:
 
 ```typescript
 const FormSchema = z.object({
-  email: z.string().email(),
+  email: z.email(),
   password: z.string().min(8),
 });
 
 async function handleSubmit(formData: FormData) {
   const result = FormSchema.safeParse(Object.fromEntries(formData));
   if (!result.success) {
-    setErrors(result.error.flatten().fieldErrors);
+    setErrors(z.flattenError(result.error).fieldErrors);
     return;
   }
   try {
@@ -129,7 +134,7 @@ apps at runtime. Validate once at startup:
 
 ```typescript
 const EnvSchema = z.object({
-  DATABASE_URL: z.string().url(),
+  DATABASE_URL: z.url(),
   PORT: z.coerce.number().int().min(1).max(65535).default(3000),
   NODE_ENV: z.enum(["development", "test", "production"]),
 });

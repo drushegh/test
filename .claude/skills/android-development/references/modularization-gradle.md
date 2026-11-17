@@ -31,25 +31,34 @@ modules.
 ## Version Catalog (`gradle/libs.versions.toml`)
 
 ```toml
+# Illustrative snapshot of a mutually compatible set (mid-2025), not "latest".
+# In an existing repo, match its versions — never bump as a side effect.
 [versions]
-compileSdk = "34"
+compileSdk = "35"
 minSdk = "24"
-kotlin = "1.9.22"            # match the repo — never bump as a side effect
-androidxComposeBom = "2024.02.00"
-hilt = "2.50"
-room = "2.6.1"
-ksp = "1.9.22-1.0.17"
+agp = "8.10.1"
+kotlin = "2.1.21"
+ksp = "2.1.21-2.0.2"         # KSP must track the Kotlin version it was built for
+androidxComposeBom = "2025.05.01"
+hilt = "2.56.2"
+room = "2.7.1"
 
 [libraries]
 androidx-compose-bom = { group = "androidx.compose", name = "compose-bom", version.ref = "androidxComposeBom" }
 hilt-android = { group = "com.google.dagger", name = "hilt-android", version.ref = "hilt" }
 room-runtime = { group = "androidx.room", name = "room-runtime", version.ref = "room" }
 room-compiler = { group = "androidx.room", name = "room-compiler", version.ref = "room" }
-turbine = { group = "app.cash.turbine", name = "turbine", version = "1.0.0" }
+turbine = { group = "app.cash.turbine", name = "turbine", version = "1.2.0" }
+# Gradle plugin artifacts, consumed by build-logic (see below)
+android-gradlePlugin = { group = "com.android.tools.build", name = "gradle", version.ref = "agp" }
+kotlin-gradlePlugin = { group = "org.jetbrains.kotlin", name = "kotlin-gradle-plugin", version.ref = "kotlin" }
+ksp-gradlePlugin = { group = "com.google.devtools.ksp", name = "com.google.devtools.ksp.gradle.plugin", version.ref = "ksp" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
+android-library = { id = "com.android.library", version.ref = "agp" }
 kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
+compose-compiler = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }  # Kotlin 2.0+: Compose compiler ships with Kotlin
 ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }
 hilt = { id = "com.google.dagger.hilt.android", version.ref = "hilt" }
 ```

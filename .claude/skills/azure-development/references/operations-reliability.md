@@ -47,11 +47,10 @@
 ## Quotas and regions
 
 Quota (vCPU families, OpenAI TPM, public IPs) is per subscription per
-region and **bites at deploy time** — check before designs and tenders
+region and **bites at deploy time** — check before designs or proposals
 promise a SKU/region (`az vm list-usage`, Foundry capacity APIs,
 Quotas API; increases take time). Not every service/SKU exists in every
-region — verify availability for the client's required residency (for
-Irish public sector: North Europe/West Europe pairing).
+region — verify availability for the client's required residency (e.g. EU data residency: North Europe/West Europe pairing).
 
 ## Governance quick map
 

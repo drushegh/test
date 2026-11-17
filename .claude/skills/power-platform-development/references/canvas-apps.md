@@ -20,8 +20,9 @@ OnSelect: |-
   `Default: '={Value: "Tab1"}'` (or double quotes with `""` escaping).
   Bites hardest on `Default`, `Selected`, and hardcoded `Items`;
   `ModernTabList.Default` is the classic case.
-- **Strings containing `: ` must be quoted**: `HintText: ="Label: enter
-  a value"`.
+- **Strings containing `: ` must be quoted**:
+  `HintText: '="Label: enter a value"'` — unquoted, the `: ` inside the
+  string is read as a YAML mapping separator.
 
 ## Control selection
 
@@ -66,8 +67,12 @@ targets, minimal typing.
 ## App structure
 
 - Set `App.StartScreen` explicitly.
-- Initialise all variables in `OnVisible` (variables are screen-scoped;
-  `Set` in `OnVisible` is the reset point).
+- Scope variables deliberately: `Set` creates **global** variables
+  (app-wide); `UpdateContext` (or `Navigate`'s context argument) creates
+  **context** variables scoped to one screen. Initialise screen state in
+  that screen's `OnVisible` (the per-visit reset point); prefer named
+  formulas in `App.Formulas` for derived values over `Set` in
+  `App.OnStart`.
 - Shared constants/logic go in `App.Formulas` (named formulas + UDFs —
   see power-fx-delegation.md), not copy-pasted per control.
 - Buttons don't support `Size` for text — resize the button.

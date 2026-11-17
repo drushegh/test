@@ -69,12 +69,12 @@ EOF
   grep -q "actually use the helper instead" "$FLAG"
   grep -q "don t commit directly to main" "$FLAG"
   # None of the noise classes leaked through.
-  ! grep -qi "doctor" "$FLAG"            # tool_result
-  ! grep -qi "stop hook" "$FLAG"         # isMeta skill expansion
-  ! grep -qi "grep directly" "$FLAG"     # sidechain
-  ! grep -qi "hardcode" "$FLAG"          # ide-injected item
-  ! grep -qi "stale lock" "$FLAG"        # fenced paste
-  ! grep -qi "without approval" "$FLAG"  # system-reminder range
+  ! grep -qi "doctor" "$FLAG" || false            # tool_result
+  ! grep -qi "stop hook" "$FLAG" || false         # isMeta skill expansion
+  ! grep -qi "grep directly" "$FLAG" || false     # sidechain
+  ! grep -qi "hardcode" "$FLAG" || false          # ide-injected item
+  ! grep -qi "stale lock" "$FLAG" || false        # fenced paste
+  ! grep -qi "without approval" "$FLAG" || false  # system-reminder range
 }
 
 @test "session-summary: counts only events after the last cost-tracker marker (TASK-034)" {
@@ -213,12 +213,10 @@ EOF
   [[ "$output" == *"2 uncommitted change(s)"* ]]
 }
 
-@test "update-metrics: framework-self flag redirects to framework/self/" {
+@test "update-metrics: writes to root .claude/framework-metrics.md (no self redirect, TASK-054)" {
   command -v jq >/dev/null 2>&1 || skip "jq not available"
-  touch "$REPO/.claude/framework-self.flag"
-  mkdir -p "$REPO/.claude/framework/self"
   run bash "$REPO/.claude/framework/insights/update-metrics.sh"
   [ "$status" -eq 0 ]
-  [ -f "$REPO/.claude/framework/self/framework-metrics.md" ]
-  [ ! -f "$REPO/.claude/framework-metrics.md" ]
+  [ -f "$REPO/.claude/framework-metrics.md" ]
+  [ ! -f "$REPO/.claude/framework/self/framework-metrics.md" ]
 }

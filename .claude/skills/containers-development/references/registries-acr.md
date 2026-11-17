@@ -73,7 +73,9 @@ az acr task create --name purge --registry "$ACR_NAME" \
 
 - Use the **Premium** tier for geo-replication (a single registry endpoint
   with regional replicas — faster pulls, regional resilience), private
-  endpoints, and content-trust/immutability features.
+  endpoints and customer-managed keys. Tag/repository locking works on every
+  tier, so immutability is not a reason to upgrade; Docker Content Trust is
+  deprecated in ACR — sign images with Notation (Notary Project) instead.
 - Co-locate the registry region with the compute that pulls from it to cut
   pull latency and egress.
 

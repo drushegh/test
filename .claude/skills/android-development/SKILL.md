@@ -63,7 +63,7 @@ Details: [references/architecture.md](references/architecture.md).
 - **`collectAsStateWithLifecycle()`** in composables — plain
   `collectAsState` leaks collection while backgrounded.
 - **Stateless components**: state and callbacks as parameters; hoist
-  state; `Modifier` as the last defaulted parameter.
+  state; `modifier: Modifier = Modifier` as the first optional parameter.
 - **Type-safe navigation** (`@Serializable` route classes,
   `composable<Route>`, `savedStateHandle.toRoute<Route>()`).
 

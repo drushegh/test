@@ -97,6 +97,23 @@ function assertIsString(value: unknown): asserts value is string {
 For external data, prefer Zod over hand-written guards — one schema gives
 you the guard, the parser, and the type.
 
+## Literal Tuples under `noUncheckedIndexedAccess`
+
+`fn([a, b])[0].prop` fails under `noUncheckedIndexedAccess` when `fn`
+returns `T[]` — index 0 is `T | undefined`. When callers pass literal arrays
+and index the result positionally, preserve the tuple shape instead of
+asserting:
+
+```typescript
+function wrap<const T extends readonly Input[]>(items: T): { [K in keyof T]: Output } {
+  return items.map(toOutput) as { [K in keyof T]: Output };  // one contained cast
+}
+const [first] = wrap([x, y]);   // Output, not Output | undefined
+```
+
+The `const` type parameter keeps the literal tuple; the homomorphic mapped
+type maps it element-by-element, so positional access is defined.
+
 ## `satisfies` and Const Assertions
 
 ```typescript

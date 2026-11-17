@@ -80,7 +80,9 @@ Pitfalls:
 - `| has_role: 'Administrators'` — on `user`; UX-only check, never the
   security boundary.
 - `| default: 'value'` — fallback for null (snippets, settings).
-- `| h` — HTML representation of an attribute (e.g. `result.xml | h`).
+- `| h` — HTML-encodes its input (DotLiquid's short alias of `escape`);
+  the docs show it displaying FetchXML as text (`query.xml | h`) and use
+  it to encode attribute values.
 - `| liquid` — render a string as Liquid. Content-author input only;
   never user input.
 - `| file_size`, date filters, URL filters (`add_query`) as per docs.

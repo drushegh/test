@@ -52,11 +52,11 @@ components:
     Problem:
       type: object
       properties:
-        type: { type: string, format: uri }
+        type: { type: string, format: uri-reference }     # RFC 9457: URI reference; default "about:blank"
         title: { type: string }
         status: { type: integer }
         detail: { type: string }
-        instance: { type: string, format: uri }
+        instance: { type: string, format: uri-reference } # often relative, e.g. "/orders/42"
 ```
 
 Define `Problem` once and `$ref` it from every error response. Reuse schemas,

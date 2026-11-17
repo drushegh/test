@@ -36,9 +36,15 @@ marker at the end of the **shared** part only.
 - Model switch mid-session (cache is per-model) — give cheap sub-tasks to
   a sub-agent on the cheaper model instead.
 - Editing the system prompt mid-session — append new operator
-  instructions after history instead (mid-conversation system messages
-  where supported — beta, model-gated — else a clearly marked block in
-  the next user turn).
+  instructions after history instead (mid-conversation system messages —
+  `{"role": "system"}` entries in `messages`, GA with no beta header but
+  model-gated: Opus 4.8/5/5.5 and Fable 5/5.1, not Sonnet 5 — else a
+  clearly marked block in the next user turn).
+- Changing top-level `output_config.effort` mid-session — it invalidates
+  the cached messages prefix. Hold effort constant per conversation, or on
+  Opus 5/5.5 and Fable 5.1 change it with a per-message effort system
+  message (beta `mid-conversation-output-config-2026-07-01`), which keeps
+  the cache.
 - A/B variants that differ at byte 1 — fork *after* the shared prefix.
 
 Verify with response usage fields: `cache_read_input_tokens` should
@@ -66,6 +72,14 @@ short (minutes); within-burst reuse is what you're engineering for.
 Budgeting: count tokens before sending (`count_tokens` endpoint);
 record `usage` per feature and per template version; alert on cost per
 task drifting, not just total spend (total spend rises with success).
+
+**Price tables must match every id the API can report.** A cost table
+keyed only on dated/versioned model ids silently misses aliases (and
+vice versa) — one tracker priced every tier at the fallback rate for
+weeks. Key both the alias and the versioned form (or normalise ids
+through one function), make an unknown id a logged warning rather than
+a silent default, and test the table against the ids your config and the
+Models API actually return.
 
 ## Latency levers
 

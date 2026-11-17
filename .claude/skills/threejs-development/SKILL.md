@@ -45,7 +45,7 @@ the default safe target — choose deliberately
 4. **Asset pipeline is glTF/GLB**: Draco or meshopt compression for
    geometry, **KTX2/Basis** for textures, power-of-two sizes where
    mipmapped. FBX/OBJ are interchange at best — convert. (Authoring
-   side → `blender-development` when built.)
+   side → `blender-development`.)
 5. **Cap `setPixelRatio(Math.min(devicePixelRatio, 2))`** — beyond 2
    is invisible cost, mobile-lethal.
 6. **Colour management**: leave `outputColorSpace` at its sRGB
@@ -91,8 +91,6 @@ the default safe target — choose deliberately
 
 - Stale imports (`examples/jsm`, old CDN script tags) from outdated
   tutorials — use `three/addons/` via import map/bundler.
-- Memory leak via hot-reload/SPA navigation: renderer + scene not
-  disposed on unmount.
 - Shadows: forgetting `castShadow`/`receiveShadow` per object, or a
   shadow camera frustum that doesn't cover the scene (or covers far
   too much — resolution waste).
@@ -100,10 +98,17 @@ the default safe target — choose deliberately
   updated matrices); raycast against a small candidates list, not
   `scene.children` deep.
 - `OrbitControls` requires `controls.update()` when damping enabled.
+  Its `'start'` event fires on pointer-down, before any drag, so
+  classify click vs drag by pointer travel yourself
+  (`references/interaction-animation.md`).
+- `renderer.dispose()` doesn't free scene geometry, materials,
+  textures or `scene.environment`. HMR then leaks GPU memory and
+  stacks listeners unless you replay cleanup in
+  `import.meta.hot.dispose` (`references/performance.md`).
 - Z-fighting from coplanar surfaces — offset geometry or
   `polygonOffset`, not depth hacks.
 - R3F: creating geometries/materials inline per render instead of
-  memo/args; forgetting `<Suspense>` around async loaders; drei
+  memo/args; forgetting `Suspense` around async loaders; drei
   `useGLTF.preload` skipped.
 
 ## References
@@ -122,6 +127,6 @@ the default safe target — choose deliberately
 - React component architecture, Suspense semantics →
   `react-development`; TypeScript typing → `typescript-development`.
 - Page integration, CSS, bundling → `frontend-development`.
-- Asset authoring/export (Blender) → `blender-development` (Batch C);
+- Asset authoring/export (Blender) → `blender-development`;
   game-engine alternatives → `unity-development` /
   `godot-development` when 3D-in-browser isn't the right call.

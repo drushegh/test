@@ -1,14 +1,17 @@
 #!/usr/bin/env bash
 # run-tests.sh — framework self-test harness.
 #
-# Two layers, both opt-in by tool availability (the framework's standard
+# Three layers, all opt-in by tool availability (the framework's standard
 # pattern — a missing tool is a skip with an install hint, never a hard
 # failure, unless you pass --require):
 #
 #   1. bats behavioural tests (*.bats) — feed each hook a simulated event
 #      (stdin JSON + env) and assert (exit code + stdout). bats is run
 #      directly if installed, else via `npx bats` if Node is present.
-#   2. shellcheck static analysis over hooks + framework shell scripts.
+#   2. console-resolver.smoke.mjs — plain-Node smoke for tools/console.mjs's
+#      resolver order (no bats harness needed for this one).
+#   3. shellcheck static analysis over hooks + framework + tools shell scripts
+#      (+ plugins/ in the framework dev repo).
 #
 # Exit codes:
 #   0 — all present tools passed (or were skipped because absent)
@@ -57,11 +60,34 @@ fi
 
 echo
 
-# --- Layer 2: shellcheck static analysis -----------------------------
+# --- Layer 2: console resolver smoke (plain Node, no bats harness) ---
+if command -v node >/dev/null 2>&1; then
+  echo "== node: console resolver smoke =="
+  node "$SCRIPT_DIR/console-resolver.smoke.mjs" || rc=1
+else
+  echo "== node: not installed — skipping console resolver smoke."
+  echo "   Install: https://nodejs.org/"
+  [ "$REQUIRE" = 1 ] && rc=1
+fi
+
+echo
+
+# --- Layer 3: shellcheck static analysis -----------------------------
 if command -v shellcheck >/dev/null 2>&1; then
-  echo "== shellcheck: hooks + framework shell scripts =="
+  echo "== shellcheck: hooks + framework + tools (+ plugins) shell scripts =="
+  # F6 fix: tools/ added — tools/console.sh is a manifest-listed,
+  # framework-owned script (framework-manifest.txt) that lived outside the
+  # two originally-scanned directories and so was never linted, locally or
+  # in CI. Scope now covers every framework shell script, not just the two
+  # directories that happened to hold all of them at the time this was
+  # written.
+  # plugins/ added: the v2 plugin scripts (plugins/<name>/**/*.sh) are the
+  # LIVE workflow and were never linted. Gated on plugins/ccmaf so a
+  # consumer's own unrelated plugins/ dir is not swept in.
+  lint_roots=("$REPO_ROOT/.claude/hooks" "$REPO_ROOT/.claude/framework" "$REPO_ROOT/tools")
+  [ -d "$REPO_ROOT/plugins/ccmaf" ] && lint_roots+=("$REPO_ROOT/plugins")
   mapfile -t sh_files < <(
-    find "$REPO_ROOT/.claude/hooks" "$REPO_ROOT/.claude/framework" \
+    find "${lint_roots[@]}" \
       -type f -name '*.sh' -not -path '*/tests/fixtures/*' 2>/dev/null | sort
   )
   if [ ${#sh_files[@]} -gt 0 ]; then

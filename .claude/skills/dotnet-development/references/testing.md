@@ -113,3 +113,16 @@ correctness. Exception-focused tests are legitimately single-assertion.
 Dispose what you create (`HttpClient`, streams, temp files). Explicit
 per-test setup over shared mutable fixtures — isolation beats DRY in
 tests.
+
+## UI Work (Blazor / Razor Pages / MVC): HTTP Smoke ≠ UI Test
+
+A `curl` or `WebApplicationFactory` request that returns 200 with the
+expected markup proves routing and rendering, not appearance: CSS classes
+that exist in no stylesheet, a 404ing stylesheet, or broken layout all
+pass. For UI changes, render in a real browser (Playwright), look at the
+screenshot, check the network panel for 404s, and run axe.
+
+A common 404: the Blazor template links `{AssemblyName}.styles.css` (the
+CSS-isolation bundle), and if the project has no `.razor.css` files the
+bundle isn't produced, so the link 404s (observed). Emit that `<link>`
+only when scoped styles exist, or add one scoped file.

@@ -4,7 +4,7 @@
 
 ```json
 {
-    "$schema": "./gen/schemas/desktop-schema.json",
+    "$schema": "https://schema.tauri.app/config/2",
     "productName": "my-app",
     "version": "1.0.0",
     "identifier": "com.example.myapp",
@@ -102,3 +102,6 @@ npx tauri ios dev / build
   full cross-compile except Windows-from-Linux via NSIS/cargo-xwin).
 - Verify `beforeBuildCommand` produces `frontendDist` before `tauri build`
   runs.
+- Icons: `cargo check` needs the files listed in `bundle.icon` to exist
+  (the build script embeds them), and Cargo does not notice a replaced
+  icon — `cargo clean -p <app crate>` after changing icons.

@@ -12,7 +12,7 @@ eur-lex, ETSI) before relying on them in contractual commitments.
 | **EN 301 549 v3.2.1** (2021) | The harmonised standard itself | WCAG 2.1 AA for web + non-web clauses |
 | **European Accessibility Act** (EU 2019/882) | Private-sector products/services: e-commerce, banking, transport, e-books, terminals, comms | EN 301 549 is the presumption-of-conformity route |
 
-## Web Accessibility Directive (public sector — tender-critical)
+## Web Accessibility Directive (public sector bodies)
 
 - Websites and mobile apps of public sector bodies must be
   perceivable, operable, understandable, robust — practically:
@@ -26,8 +26,7 @@ eur-lex, ETSI) before relying on them in contractual commitments.
   and in-depth monitoring rounds and reporting to the Commission.
   Irish public bodies also carry Disability Act 2005 obligations
   (Code of Practice on Accessibility of Public Services).
-- Tender consequence: Irish public-sector RFTs routinely score
-  accessibility explicitly; cite EN 301 549 + WAD obligations and the
+- Compliance consequence: accessibility is frequently a scored, explicit requirement; cite EN 301 549 + WAD obligations and the
   monitoring regime, and commit to evidence (audit method, statement
   maintenance), not adjectives.
 

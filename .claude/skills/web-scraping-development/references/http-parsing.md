@@ -7,7 +7,9 @@ the fastest, cheapest approach. Reach for a browser only when JS is essential
 ## Fetching with httpx
 
 `httpx` supports HTTP/2, connection pooling and async. Reuse a client, set a
-timeout and an honest User-Agent, and handle status codes.
+timeout and an honest User-Agent, and handle status codes. `http2=True` needs
+the extra (`pip install "httpx[http2]"`, which pulls in `h2`) — without it the
+client raises `ImportError`.
 
 ```python
 import httpx
@@ -46,11 +48,16 @@ robustness win.
 ```python
 from bs4 import BeautifulSoup
 
-soup = BeautifulSoup(html, "lxml")
-for card in soup.select("article.product"):
-    name = card.select_one("h2").get_text(strip=True)
-    price = card.select_one(".price")
-    yield {"name": name, "price": price.get_text(strip=True) if price else None}
+def text_or_none(el):
+    return el.get_text(strip=True) if el is not None else None
+
+def parse_products(html):
+    soup = BeautifulSoup(html, "lxml")
+    for card in soup.select("article.product"):
+        yield {
+            "name": text_or_none(card.select_one("h2")),
+            "price": text_or_none(card.select_one(".price")),
+        }
 ```
 
 ```python

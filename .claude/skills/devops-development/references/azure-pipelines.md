@@ -26,6 +26,10 @@ stages:
             fetchDepth: 1
           - script: dotnet build -c $(buildConfiguration)
             displayName: Build
+          - script: >-
+              dotnet publish -c $(buildConfiguration) --no-build
+              -o $(Build.ArtifactStagingDirectory)
+            displayName: Publish to staging dir   # else the artifact is empty
           - publish: $(Build.ArtifactStagingDirectory)
             artifact: drop
 
@@ -38,6 +42,7 @@ stages:
           runOnce:
             deploy:
               steps:
+                - checkout: self       # deployment jobs skip checkout by default; deploy.sh is in the repo
                 - download: current
                   artifact: drop
                 - script: ./deploy.sh

@@ -38,6 +38,15 @@ five-call dance. When unsure, favour coverage.
   protocol errors.
 - Define `outputSchema` / return `structuredContent` where the SDK
   supports it, alongside readable text.
+- **Long-running work is fire-and-return.** A tool that dispatches a
+  build, a sub-agent or a batch job should validate and policy-check the
+  request first (refuse with advice if it fails), then return at once
+  with `{accepted: true, handle}`; stream progress and output
+  out-of-band keyed by the handle (a status tool, a resource, logs).
+  Blocking until completion, or piping a sub-agent's whole output
+  through the tool result, runs into client timeouts and result-size
+  caps. The 2026 spec work on Tasks formalises this pattern — use it
+  when your SDK and clients support it (verify).
 
 ## Stack and transports
 
@@ -51,12 +60,12 @@ Recommended: **TypeScript SDK** (or Python FastMCP), and:
 ```python
 # FastMCP sketch (Python)
 from fastmcp import FastMCP
-mcp = FastMCP("opensky_tenders_mcp")
+mcp = FastMCP("kb_mcp")
 
 @mcp.tool()
-async def tenders_search(query: str, limit: int = 20) -> dict:
-    """Search published tender notices by keyword. Call when the user
-    asks about live or historical public-sector tenders."""
+async def kb_search(query: str, limit: int = 20) -> dict:
+    """Search the knowledge base by keyword. Call when the user
+    asks about articles or documentation."""
     rows, more = await search(query, limit)
     return {"items": rows, "count": len(rows), "has_more": more}
 

@@ -112,9 +112,12 @@ export const getCurrentUser = cache(async () => {
 import { LRUCache } from "lru-cache";
 const cacheStore = new LRUCache<string, unknown>({ max: 1000, ttl: 5 * 60 * 1000 });
 
-// Static assets: hoist I/O to module level — runs once, not per request
-const fontData = fetch(new URL("./fonts/Inter.ttf", import.meta.url))
-  .then(res => res.arrayBuffer());
+// Static assets: hoist I/O to module level — runs once, not per request.
+// Node runtime: read from disk (fetch() of a file: URL is unsupported there;
+// that pattern is Edge-runtime only).
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
+const fontData = readFile(join(process.cwd(), "assets/fonts/Inter.ttf"));
 export async function GET() {
   const font = await fontData;
   /* ... */

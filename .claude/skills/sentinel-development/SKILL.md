@@ -53,7 +53,7 @@ atc-net's azure-sentinel skill provides a categorised MS Learn URL index
    Apply the documented `ingestion_time()` offset pattern or accept
    quantified gaps deliberately.
 5. **Tag MITRE ATT&CK tactics/techniques on every rule** — coverage
-   mapping (and tender evidence) depends on it.
+   mapping (and audit evidence) depends on it.
 6. **Cost is a design input.** Every connector decision is a billing
    decision: choose analytics vs data-lake tier per table on access
    patterns, filter at the DCR before ingestion, and review the cost

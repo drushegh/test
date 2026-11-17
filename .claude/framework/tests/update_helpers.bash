@@ -31,10 +31,15 @@ write_fixture_manifest() {  # <path>
   cat > "$1" <<'EOF'
 # synthetic manifest (test fixture)
 .claude/framework/owned/
+.claude/framework/owned/nested.sh
 .claude/hooks/sample-hook.sh
 .claude/commands/wrapup.md
 CLAUDE.framework.md
 EOF
+  # NOTE: owned/nested.sh is deliberately listed as a FILE nested under the
+  # owned/ dir-mirror — the exact shape of the real migrate-layout.sh-under-
+  # update/ entry that caused BUG-003. Pruning must drop it; every
+  # apply-update test now exercises that path.
 }
 
 # Builds the synthetic upstream with two commits on main.
@@ -53,6 +58,7 @@ build_upstream() {
     write_fixture_manifest "$UPSTREAM/.claude/framework/update/framework-manifest.txt"
   fi
   echo "owned v1" > "$UPSTREAM/.claude/framework/owned/file.txt"
+  echo "nested v1" > "$UPSTREAM/.claude/framework/owned/nested.sh"
   echo "hook v1"  > "$UPSTREAM/.claude/hooks/sample-hook.sh"
   echo "wrapup command v1" > "$UPSTREAM/.claude/commands/wrapup.md"
   echo "rules v1" > "$UPSTREAM/CLAUDE.framework.md"
@@ -61,12 +67,45 @@ build_upstream() {
   UPSTREAM_V1_SHA=$(git -C "$UPSTREAM" rev-parse HEAD)
 
   echo "owned v2"  > "$UPSTREAM/.claude/framework/owned/file.txt"
+  echo "nested v2" > "$UPSTREAM/.claude/framework/owned/nested.sh"
   echo "new in v2" > "$UPSTREAM/.claude/framework/owned/new-in-v2.txt"
   echo "hook v2"   > "$UPSTREAM/.claude/hooks/sample-hook.sh"
   echo "wrapup command v2" > "$UPSTREAM/.claude/commands/wrapup.md"
   echo "rules v2"  > "$UPSTREAM/CLAUDE.framework.md"
   git -C "$UPSTREAM" add -A
   git -C "$UPSTREAM" commit -qm "v2: framework changes"
+  UPSTREAM_V2_SHA=$(git -C "$UPSTREAM" rev-parse HEAD)
+}
+
+# Builds a synthetic upstream whose CANONICAL framework lives under <subdir>/
+# (e.g. 02_solution) — the clean/dirty split shape (TASK-054). Manifest paths
+# stay relative to the subdir (= consumer root). Two commits on main.
+# Sets: UPSTREAM, UPSTREAM_V1_SHA, UPSTREAM_V2_SHA.
+build_upstream_subdir() {  # <subdir>
+  local sub="$1"
+  UPSTREAM="$BATS_TEST_TMPDIR/upstream"
+  mkdir -p "$UPSTREAM/$sub/.claude/framework/owned" \
+           "$UPSTREAM/$sub/.claude/framework/update" \
+           "$UPSTREAM/$sub/.claude/hooks" \
+           "$UPSTREAM/$sub/.claude/commands"
+  _init_fixture_repo "$UPSTREAM"
+  write_fixture_manifest "$UPSTREAM/$sub/.claude/framework/update/framework-manifest.txt"
+  echo "owned v1"  > "$UPSTREAM/$sub/.claude/framework/owned/file.txt"
+  echo "nested v1" > "$UPSTREAM/$sub/.claude/framework/owned/nested.sh"
+  echo "hook v1"   > "$UPSTREAM/$sub/.claude/hooks/sample-hook.sh"
+  echo "wrapup command v1" > "$UPSTREAM/$sub/.claude/commands/wrapup.md"
+  echo "rules v1"  > "$UPSTREAM/$sub/CLAUDE.framework.md"
+  git -C "$UPSTREAM" add -A
+  git -C "$UPSTREAM" commit -qm "v1"
+  UPSTREAM_V1_SHA=$(git -C "$UPSTREAM" rev-parse HEAD)
+
+  echo "owned v2"  > "$UPSTREAM/$sub/.claude/framework/owned/file.txt"
+  echo "nested v2" > "$UPSTREAM/$sub/.claude/framework/owned/nested.sh"
+  echo "new in v2" > "$UPSTREAM/$sub/.claude/framework/owned/new-in-v2.txt"
+  echo "rules v2"  > "$UPSTREAM/$sub/CLAUDE.framework.md"
+  git -C "$UPSTREAM" add -A
+  git -C "$UPSTREAM" commit -qm "v2: framework changes"
+  # shellcheck disable=SC2034  # consumed by the .bats files that load this helper
   UPSTREAM_V2_SHA=$(git -C "$UPSTREAM" rev-parse HEAD)
 }
 
@@ -82,12 +121,14 @@ build_consumer() {
      "$CONSUMER/.claude/framework/update/"
   write_fixture_manifest "$CONSUMER/.claude/framework/update/framework-manifest.txt"
   echo "owned v1" > "$CONSUMER/.claude/framework/owned/file.txt"
+  echo "nested v1" > "$CONSUMER/.claude/framework/owned/nested.sh"
   echo "hook v1"  > "$CONSUMER/.claude/hooks/sample-hook.sh"
   echo "wrapup command v1" > "$CONSUMER/.claude/commands/wrapup.md"
   echo "rules v1" > "$CONSUMER/CLAUDE.framework.md"
   echo "project hook — must survive updates" > "$CONSUMER/.claude/hooks/project-hook.sh"
 
   CVERSION="$CONSUMER/.claude/.framework-version"
+  # shellcheck disable=SC2034  # consumed by the .bats files that load this helper
   CFLAG="$CONSUMER/.claude/.framework-update-available.md"
   cat > "$CVERSION" <<EOF
 FRAMEWORK_UPSTREAM_URL=$UPSTREAM
@@ -107,7 +148,14 @@ set_version_field() {  # <field> <value>
   mv "$CVERSION.tmp" "$CVERSION"
 }
 
-apply_update()  { ( cd "$CONSUMER" && bash .claude/framework/update/apply-update.sh ); }
+# --yes by default: bats runs non-interactively (no tty), and the
+# confirmation gate (audit minor e) refuses to proceed without either a
+# tty prompt or --yes. Most tests exercise the update mechanics, not the
+# confirmation UX, so default to --yes; tests that specifically target
+# the confirmation/refusal behavior call the _noconfirm variant (no args
+# injected) and assert the refusal explicitly.
+apply_update()  { ( cd "$CONSUMER" && bash .claude/framework/update/apply-update.sh --yes "$@" ); }
+apply_update_noconfirm() { ( cd "$CONSUMER" && bash .claude/framework/update/apply-update.sh "$@" ); }
 check_updates() { ( cd "$CONSUMER" && bash .claude/framework/update/check-updates.sh ); }
 
 # Old-layout consumer for migrate-layout tests. The real migrate-layout.sh
@@ -131,7 +179,13 @@ build_old_layout_consumer() {
     echo "# status" > "$OLDC/STATUS.md"
   fi
   echo "FRAMEWORK_PINNED_SHA=abc" > "$OLDC/.framework-version"
-  printf 'See 00_framework/self/README.md\nRead 00_framework/insights/notes.txt\n' > "$OLDC/CLAUDE.md"
+  # Legacy ground truth: old-layout CLAUDE.md used BARE path references
+  # (no backtick convention existed then). One bare reference, one
+  # backticked, and one plain-prose mention — migrate-layout's
+  # token-boundary sed must rewrite ALL THREE shapes (audit M3, corrected:
+  # sed cannot semantically tell a bare reference from prose naming the
+  # path; the shown-diff + confirmation gate is what guards the prose case).
+  printf 'See 00_framework/self/README.md\nRead `00_framework/insights/notes.txt`\nHistorically the 00_framework/ layout held these files.\n' > "$OLDC/CLAUDE.md"
   printf '.framework-update-available.md\n# see 00_framework/self/README.md\n' > "$OLDC/.gitignore"
 
   _init_fixture_repo "$OLDC"
@@ -139,13 +193,15 @@ build_old_layout_consumer() {
   git -C "$OLDC" commit -qm "old layout baseline"
 }
 
-migrate_layout() { ( cd "$OLDC" && bash .claude/framework/update/migrate-layout.sh ); }
+migrate_layout() { ( cd "$OLDC" && bash .claude/framework/update/migrate-layout.sh --yes "$@" ); }
+migrate_layout_noconfirm() { ( cd "$OLDC" && bash .claude/framework/update/migrate-layout.sh "$@" ); }
 
 # Doctor-clean consumer: every invariant doctor checks holds. Broken-state
 # tests start from this and mutate exactly one thing.
 # Sets: DOC, DOCFLAG.
 build_doctor_consumer() {
   DOC="$BATS_TEST_TMPDIR/doctor-consumer"
+  # shellcheck disable=SC2034  # consumed by the .bats files that load this helper
   DOCFLAG="$DOC/.claude/.framework-doctor-findings.md"
   mkdir -p "$DOC/.claude/framework/doctor" \
            "$DOC/.claude/framework/update" \
@@ -188,6 +244,64 @@ EOF
 
 run_doctor() { ( cd "$DOC" && bash .claude/framework/doctor/doctor.sh ); }
 
+# Seed VALID state files into the doctor-consumer ($DOC) using the framework's
+# CANONICAL conventions (agreed cross-repo, CHANNEL r2): BRACKETED task/bug IDs
+# (`#### [TASK-N]`), a Feature-lane `### Verify` section, and date-headed
+# decisions (DEC-N is also accepted). Check 13 tests start from these and mutate
+# exactly one thing. Must produce ZERO state-structure findings.
+seed_doctor_state_files() {
+  cat > "$DOC/.claude/TASKS.md" <<'EOF'
+# Task Board
+
+## Feature Lane
+
+### In Progress
+
+#### [TASK-001] A valid feature task [P1]
+
+### Ready for Test
+
+### Verify
+
+### Done
+
+## Bug-Fix Lane
+
+### Reported
+
+#### [BUG-001] A valid bug entry [P2]
+
+### Done
+EOF
+  cat > "$DOC/.claude/DECISIONS.md" <<'EOF'
+# Decision Log
+
+## 2026-06-26 — A valid date-headed decision (TASK-001)
+
+**Decision:** something deliberate.
+EOF
+  cat > "$DOC/.claude/GOTCHAS.md" <<'EOF'
+# Gotchas & Lessons Learned
+
+## Framework development
+
+### A valid gotcha title
+
+**Confidence:** Verified — traced to source.
+
+Body text.
+EOF
+  cat > "$DOC/.claude/ECOSYSTEM.md" <<'EOF'
+# Ecosystem Contracts
+
+### Some contract
+
+<!-- contract:some-thing status:stable -->
+
+    type Foo = {}
+EOF
+}
+
 # --- Skills-sync fixtures (TASK-036) ----------------------------------
 
 # Synthetic skills upstream: two skills (python/, rust/), one commit.
@@ -201,6 +315,7 @@ build_skills_upstream() {
   printf -- '---\nname: rust\n---\nrust skill v1\n' > "$SKILLS_UPSTREAM/rust/SKILL.md"
   git -C "$SKILLS_UPSTREAM" add -A
   git -C "$SKILLS_UPSTREAM" commit -qm "skills v1"
+  # shellcheck disable=SC2034  # consumed by the .bats files that load this helper
   SKILLS_UPSTREAM_SHA=$(git -C "$SKILLS_UPSTREAM" rev-parse HEAD)
 }
 
@@ -227,7 +342,12 @@ EOF
 }
 
 skills_sync() { ( cd "$SCONSUMER" && bash .claude/framework/update/skills-sync.sh "$@" ); }
-skills_check() { ( cd "$SCONSUMER" && bash .claude/framework/update/skills-check.sh "$@" ); }
+# Hermetic: DEFAULT mode (no URL, no bundle) polls the public catalogue, so pin
+# the default upstream to a local (dead unless a test overrides it) path — a
+# test must never reach github.com.
+skills_check() { ( cd "$SCONSUMER" &&
+  SKILLS_DEFAULT_UPSTREAM_URL="${SKILLS_DEFAULT_UPSTREAM_URL:-$BATS_TEST_TMPDIR/no-default-upstream}" \
+    bash .claude/framework/update/skills-check.sh "$@" ); }
 SFLAG() { echo "$SCONSUMER/.claude/.skills-update-available.md"; }
 
 # Replace/append one FIELD=VALUE line in the consumer's .skills-version.

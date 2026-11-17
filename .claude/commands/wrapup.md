@@ -1,6 +1,13 @@
 Run the /wrapup sequence before ending a session (end of day, PC ↔ laptop switch, fresh-context restart).
 
+> **Step 0 — v2 self-route (read this first):** if `.claude/.framework-version` contains a
+> `FRAMEWORK_LINE=v2` line, this project runs the CCMAF v2 plugins — invoke the
+> `ccmaf:wrapup` skill (Skill tool) and follow IT instead of this file; stop reading
+> here. This bare command is the v1-line copy, kept as authored source.
+
 **Goal:** flush everything in *your current context window* to disk so nothing is lost on the next cold start. Cheaper to surface a risk now than to re-derive context tomorrow.
+
+This is the **Handoff** in the session-lifecycle model (CLAUDE.framework.md "Session Lifecycle"): externalise → commit → **push**. The push is what makes a cold-start Rehydrate on another machine correct — *no push = no handoff*. (Contrast: a mid-run **Checkpoint** flushes the in-flight working-set to `claude-progress.txt`'s `## WIP` section without committing — `/pre-compact` is the command form of that Checkpoint, for clearing the window before a manual `/compact`; `/wrapup` is the full, committed-and-pushed version, run only at session END.)
 
 Run each check in order. Report the result of each as a single line prefixed with ✓ (clean), ⚠ (action needed), or — (skipped / not applicable). After all checks, emit the final verdict.
 
@@ -126,6 +133,22 @@ Once checks 1–7 are settled, ask **one** question with AskUserQuestion:
 Pre-commit/pre-push hooks may run. If one fails, surface the failure and
 fix the underlying issue — don't bypass with `--no-verify`.
 
+## 9. Stop the project Console (session end)
+
+`/wrapup` is the session-END boundary, so tear down this project's Console if it
+was opted in (`.claude/.console-version` or the legacy `.claude/.console-enabled`):
+
+```bash
+node tools/console.mjs stop
+```
+
+This gracefully shuts the project's Console down (the tray Hub drops it, and the
+Hub exits when its last console closes — `contract:console-lifecycle`). It is a
+safe no-op if the project isn't opted in or no Console is running, so just run it.
+Do **not** do this in `/pre-compact` — that is a mid-session Checkpoint, not a
+session end, and the Console must stay up across a manual compaction. Report the
+result on one line (✓ stopped / — not opted in / — none running).
+
 ---
 
 ## Final verdict
@@ -149,7 +172,7 @@ the same line and exits 0; never let it block the wrapup (if the script itself
 is missing, emit `Session efficacy: telemetry unavailable (script missing)`
 and move on).
 
-Then, after all eight steps, emit one of:
+Then, after all nine steps, emit one of:
 
 - **`✓ Safe to close — all context flushed to disk.`** — every check clean, nothing pending (and either committed+pushed, or "No" was chosen deliberately).
 - **`⚠ N item(s) to resolve before close:`** followed by a numbered list of the residuals. Each item: what's open, and what the user needs to do (answer a question / approve an edit / make a call).

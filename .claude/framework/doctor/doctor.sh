@@ -12,6 +12,9 @@
 # surfaces findings via AskUserQuestion.
 #
 # Invariants checked:
+#   -- v2 migration state (legacy-layout, TASK-166; runs FIRST): flags a
+#      half-migrated tree (tombstone without FRAMEWORK_LINE=v2, or the v2 line
+#      set while this bundled v1 doctor still runs). Skipped in the dev repo.
 #   1. Hook scripts referenced in settings.json exist on disk,
 #      and every hook file on disk is referenced in settings.json.
 #   2. Cross-references (markdown links to local paths) in CLAUDE.md,
@@ -22,13 +25,44 @@
 #   4. Every path in .claude/framework/update/framework-manifest.txt exists
 #      locally. Missing paths mean apply-update.sh will fail mid-copy.
 #   5. .framework-version (if present) has all required fields set.
-#   6. TASKS.md has no duplicate TASK-NNN heading IDs.
+#   6. (retired — multi-project mode removed, TASK-023; number kept stable)
+#   7. TASKS.md has no duplicate TASK-NNN heading IDs.
+#   8. (retired — framework-self mode removed, TASK-054; number kept stable)
 #   9. Detector-consumer determinism: if any framework code added in
 #      recent commits references .claude/review-findings.md or its
 #      rotated archive as INPUT (not just output), warn unless
 #      /healthcheck --verify has been run since.
 #  10. statusLine.command reads stdin, not the nonexistent
 #      $CLAUDE_STATUS_JSON env var.
+#  11. GNU toolchain capabilities present (find -printf, date -d, sed -i).
+#  12. No upstream framework-dev content leaked into consumer state files.
+#  13. State-file structural grammar (TASKS / DECISIONS / GOTCHAS /
+#      ECOSYSTEM): lane headings, status-section placement, lane routing,
+#      the `·` (U+00B7) middot separator, the **Confidence:** marker, and
+#      the contract status enum. Drift here SILENTLY drops entries from
+#      downstream machine-readers (board projections, dashboards, the
+#      framework's own scripts). Settled, shared shapes only — the
+#      bracketed task-ID (`#### [TASK-N]`) and DEC-N decision-ID
+#      conventions are under cross-repo discussion and are NOT enforced.
+#  14. Reconcile cadence: warn (NAG) when >=RECONCILE_DUE_THRESHOLD tasks
+#      have entered Done since .claude/telemetry/.last-reconcile's mtime —
+#      the horizontal /reconcile pass is falling behind the vertical build
+#      cadence. Silent (no baseline yet) until /reconcile has run once.
+#  15. Board <-> reality coherence (contract:board-coherence): the board can
+#      drift from demonstrable reality while passing the Stop hook (which
+#      checks state files were TOUCHED, not truthful). Flags the drift class
+#      /board-heal restores — tasks in Verify with no verify seed (when opted
+#      into the Console; a task still queued in Ready-for-Test has no seed by
+#      design), orphan seeds, a base ID spanning
+#      >1 lifecycle column, and a Ready-for-Review pile-up (NAG). DETECT-only:
+#      never mutates TASKS.md or the seeds. (Check 13 gained a companion flag
+#      for NON-CANONICAL suffixed sub-IDs, which older board tools drop/mis-parse.)
+#  16. State-file size budgets (OPT P3): each live state file vs a ceiling in
+#      framework/doctor/state-budgets.conf (or .claude/state-budgets.local.conf).
+#      >=80% -> WARNING, >=100% -> WARNING ("OVER") -- never CRITICAL, which
+#      would halt unattended runs; the finding names a per-file remedy
+#      (rotate-state.sh only rotates TASKS + DECISIONS). This is the missing half of the enforcement asymmetry (Stop defends freshness;
+#      nothing defended bounds). Never blocks — enforce at boot, remediate at will.
 #
 # Exit codes:
 #   0 — all checks pass OR findings written to flag file (cold start continues)
@@ -41,8 +75,11 @@ set -euo pipefail
 # Bash 4+ guard (DA-C8): this script uses mapfile, which bash 3.2 (stock
 # macOS) lacks — without the guard it dies mid-run with a confusing error
 # and NO checks execute. Fail loudly and early instead.
-if [ "${BASH_VERSINFO[0]:-0}" -lt 4 ]; then
-  echo "doctor: bash >= 4 required (found ${BASH_VERSION:-unknown})." >&2
+# 4.4, not just 4: under `set -u`, bash 4.0-4.3 treat "${arr[@]}" of an EMPTY
+# array as an unbound variable and abort mid-run (several checks expand
+# possibly-empty arrays).
+if [ "${BASH_VERSINFO[0]:-0}" -lt 4 ] || { [ "${BASH_VERSINFO[0]:-0}" -eq 4 ] && [ "${BASH_VERSINFO[1]:-0}" -lt 4 ]; }; then
+  echo "doctor: bash >= 4.4 required (found ${BASH_VERSION:-unknown})." >&2
   echo "doctor: on macOS: brew install bash, then re-run. No checks were performed." >&2
   exit 1
 fi
@@ -58,9 +95,23 @@ VERSION_FILE="$PROJECT_ROOT/.claude/.framework-version"
 rm -f "$FLAG_FILE"
 
 # --- Finding collection ----------------------------------------------
-# Each element: "SEVERITY|CHECK|MESSAGE". Severity is CRITICAL|WARNING|INFO.
+# Each element: "SEVERITY|CHECK|MESSAGE". Severity is CRITICAL|WARNING|INFO|NAG.
 findings=()
 add_finding() { findings+=("$1|$2|$3"); }
+
+# --- Per-check profiling (OPT round-2 P0): `doctor.sh --profile` times each
+# check to stderr and exits 0. Measurement-first, per both advisors — pin down
+# which checks own the cold-start wall time before repairing (round-2 P2).
+DOCTOR_PROFILE=0; [ "${1:-}" = "--profile" ] && DOCTOR_PROFILE=1
+_dnow_ms() { date +%s%3N 2>/dev/null | grep -qE '^[0-9]+$' && date +%s%3N || echo 0; }
+_run() {
+  if [ "$DOCTOR_PROFILE" = 1 ]; then
+    local s e; s=$(_dnow_ms); "$1"; e=$(_dnow_ms)
+    printf 'PROFILE %-26s %6s ms\n' "$1" "$((e - s))" >&2
+  else
+    "$1"
+  fi
+}
 
 # --- Check 1: Hook ↔ settings.json consistency -----------------------
 check_hooks() {
@@ -100,23 +151,27 @@ check_hooks() {
     mapfile -t on_disk < <(
       find "$PROJECT_ROOT/.claude/hooks" -maxdepth 1 -type f \( -name '*.sh' -o -name '*.py' \) -printf '.claude/hooks/%f\n' | sort -u
     )
+    # O(1) membership set for the "directly referenced?" test — replaces a
+    # `printf | grep -qxF` spawn per on-disk hook.
+    local -A _ref_set=()
+    for r in "${referenced_paths[@]}"; do _ref_set["$r"]=1; done
+    # Existing registered-hook files, gathered ONCE — the dispatcher-indirect
+    # check greps ALL of them in a single spawn per candidate rather than
+    # looping (and recomputing basename) per referenced path.
+    local ref_files=()
+    for r in "${referenced_paths[@]}"; do
+      [ -f "$PROJECT_ROOT/$r" ] && ref_files+=("$PROJECT_ROOT/$r")
+    done
     for p in "${on_disk[@]}"; do
-      if ! printf '%s\n' "${referenced_paths[@]}" | grep -qxF "$p"; then
-        # Dispatcher-driven hooks (TASK-035): a hook invoked by a hook
-        # that IS registered (post-edit-dispatch.sh runs auto-format /
-        # auto-lint / verify-deps) is wired, just indirectly. Treat
-        # "basename appears in a registered hook's file" as referenced.
-        indirect=0
-        for r in "${referenced_paths[@]}"; do
-          [ -f "$PROJECT_ROOT/$r" ] || continue
-          if grep -qF "$(basename "$p")" "$PROJECT_ROOT/$r" 2>/dev/null; then
-            indirect=1
-            break
-          fi
-        done
-        [ "$indirect" = 1 ] && continue
-        add_finding "WARNING" "hooks" "\`$p\` exists on disk but isn't referenced in \`.claude/settings.json\` (directly, or via a registered dispatcher hook). Either wire it up or delete the file (dead code)."
+      [ -n "${_ref_set[$p]:-}" ] && continue   # directly referenced
+      # Dispatcher-driven hooks (TASK-035): a hook invoked by a hook that IS
+      # registered (post-edit-dispatch.sh runs auto-format / auto-lint /
+      # verify-deps) is wired, just indirectly. Treat "basename appears in a
+      # registered hook's file" as referenced. One multi-file grep, not a loop.
+      if [ ${#ref_files[@]} -gt 0 ] && grep -qF "${p##*/}" "${ref_files[@]}" 2>/dev/null; then
+        continue
       fi
+      add_finding "WARNING" "hooks" "\`$p\` exists on disk but isn't referenced in \`.claude/settings.json\` (directly, or via a registered dispatcher hook). Either wire it up or delete the file (dead code)."
     done
   fi
 }
@@ -137,9 +192,12 @@ check_cross_refs() {
 
   for f in "${scan_files[@]}"; do
     local f_dir
-    f_dir=$(dirname "$f")
-    # Extract markdown link targets: [...](path)
+    f_dir="${f%/*}"   # dirname (all scan_files are absolute paths) — no spawn
+    # Extract markdown link targets: [...](path). grep emits the whole `](path)`
+    # match; strip the `](` prefix and `)` suffix in-shell instead of piping
+    # each file's matches through a per-file `sed` (16 files ≈ 16 saved spawns).
     while IFS= read -r target; do
+      target="${target#](}"; target="${target%)}"
       # Skip external URLs, mailto, pure anchors, code-block paths.
       case "$target" in
         http://*|https://*|mailto:*|'#'*|'') continue ;;
@@ -155,6 +213,14 @@ check_cross_refs() {
         resolved="$f_dir/$clean_target"
       elif [ -e "$PROJECT_ROOT/$clean_target" ]; then
         resolved="$PROJECT_ROOT/$clean_target"
+      else
+        # Absolute paths (Unix /... or Windows drive-letter F:/...) resolve on
+        # their own, not relative to the file or project root. Git Bash's test
+        # understands the drive-letter form, so a real F:/... target exists here
+        # — without this arm a valid absolute cross-ref false-WARNs every run.
+        case "$clean_target" in
+          /*|[A-Za-z]:/*) [ -e "$clean_target" ] && resolved="$clean_target" ;;
+        esac
       fi
 
       if [ -z "$resolved" ]; then
@@ -165,7 +231,7 @@ check_cross_refs() {
         local rel_f="${f#$PROJECT_ROOT/}"
         add_finding "WARNING" "cross-refs" "\`$rel_f\` links to \`$clean_target\` but the target doesn't exist. Fix: restore the file, update the link, or remove the reference."
       fi
-    done < <(grep -oE '\]\([^)]+\)' "$f" | sed 's/^](\(.*\))$/\1/')
+    done < <(grep -oE '\]\([^)]+\)' "$f")
   done
 }
 
@@ -225,17 +291,24 @@ check_framework_version() {
     return
   fi
 
-  # Source in a subshell so we don't leak vars into doctor's environment.
+  # Parsed without sourcing (DA-M12: never execute a config file as shell —
+  # a subshell only stops variable leakage into doctor's environment, it
+  # does not stop a malicious .framework-version's content from running
+  # arbitrary commands). Pull only the 3 required KEY=VALUE fields.
   # mktemp, not a predictable /tmp path (DA-H8): on a restricted /tmp the
   # old redirect failed silently and the check always passed.
   local missing_tmp
   missing_tmp=$(mktemp 2>/dev/null) || missing_tmp="$PROJECT_ROOT/.claude/.doctor-missing.$$"
+  _ver_get() {
+    sed -n "s/^[[:space:]]*$1=\\(.*\\)\$/\\1/p" "$VERSION_FILE" 2>/dev/null | tail -1
+  }
   (
-    # shellcheck disable=SC1090
-    source "$VERSION_FILE"
-    [ -z "${FRAMEWORK_UPSTREAM_URL:-}" ]    && echo "FRAMEWORK_UPSTREAM_URL"
-    [ -z "${FRAMEWORK_UPSTREAM_BRANCH:-}" ] && echo "FRAMEWORK_UPSTREAM_BRANCH"
-    [ -z "${FRAMEWORK_PINNED_SHA:-}" ]      && echo "FRAMEWORK_PINNED_SHA"
+    _url="$(_ver_get FRAMEWORK_UPSTREAM_URL)";    _url="${_url%$'\r'}"
+    _branch="$(_ver_get FRAMEWORK_UPSTREAM_BRANCH)"; _branch="${_branch%$'\r'}"
+    _sha="$(_ver_get FRAMEWORK_PINNED_SHA)";      _sha="${_sha%$'\r'}"
+    [ -z "$_url" ]    && echo "FRAMEWORK_UPSTREAM_URL"
+    [ -z "$_branch" ] && echo "FRAMEWORK_UPSTREAM_BRANCH"
+    [ -z "$_sha" ]    && echo "FRAMEWORK_PINNED_SHA"
   ) > "$missing_tmp" 2>/dev/null || true
 
   if [ -s "$missing_tmp" ]; then
@@ -253,20 +326,21 @@ check_framework_version() {
 
 # --- Check 7: No duplicate TASK-NNN heading IDs ----------------------
 check_task_duplicates() {
-  # Framework-self mode: state files live under .claude/framework/self/ when
-  # the flag is present (upstream framework dev only).
-  local state_root="$PROJECT_ROOT"
-  if [ -f "$PROJECT_ROOT/.claude/framework-self.flag" ]; then
-    state_root="$PROJECT_ROOT/.claude/framework/self"
-  fi
-  local tasks="$state_root/TASKS.md"
+  # State files live at .claude/ (framework-self redirect retired, TASK-054).
+  local tasks="$PROJECT_ROOT/.claude/TASKS.md"
   [ ! -f "$tasks" ] && return
 
-  # Only match task IDs that appear in headings (#### [TASK-NNN] or
-  # ### [TASK-NNN] or - **TASK-NNN** — style). Avoid counting references
-  # inside prose.
+  # Only match task IDs that appear as ENTRY headings: a `#### [TASK-NNN]`
+  # bracketed heading, or a `- **TASK-NNN**` list-item entry (the bullet-board
+  # style). Both arms are LINE-ANCHORED (`^`) so a bold `**TASK-NNN**` mention
+  # sitting mid-PROSE (a description referencing another task) is NOT counted —
+  # the old unanchored `\*\*…\*\*` arm miscounted those, mis-flagging any task
+  # whose ID appears bolded in another entry's prose as a duplicate (the known
+  # Check-7 FP on every cold start). `[[:space:]]` not `\s` (BSD grep lacks
+  # `\s`). `-oE` prints only the matched prefix, so a heading line that also
+  # references another ID in trailing prose contributes just its own ID.
   mapfile -t dups < <(
-    grep -oE '(#+\s*\[(TASK|BUG)-[0-9]+\]|\*\*(TASK|BUG)-[0-9]+\*\*)' "$tasks" \
+    grep -oE '^(#+[[:space:]]*\[(TASK|BUG)-[0-9]+\]|[[:space:]]*[-*][[:space:]]+\*\*(TASK|BUG)-[0-9]+\*\*)' "$tasks" \
       | grep -oE '(TASK|BUG)-[0-9]+' \
       | sort \
       | uniq -d
@@ -277,20 +351,9 @@ check_task_duplicates() {
   done
 }
 
-# --- Check 8: framework-self.flag must not be committed to git -------
-# The flag is per-clone local state — it tells hooks/cold-start to
-# redirect to .claude/framework/self/. If it's tracked by git, a fresh
-# clone would inherit it and activate framework-self mode in a
-# consumer project, which is broken (state files aren't populated,
-# .claude/framework/self/ may not be in the manifest). Flag it loudly.
-check_framework_self_flag_untracked() {
-  local flag=".claude/framework-self.flag"
-  [ ! -f "$PROJECT_ROOT/$flag" ] && return
-  # Is the flag tracked by git in this repo?
-  if git -C "$PROJECT_ROOT" ls-files --error-unmatch -- "$flag" >/dev/null 2>&1; then
-    add_finding "WARNING" "framework-self" "\`$flag\` is tracked by git in this repo. The flag is meant to be per-clone local state (present only in the upstream framework repo to enable self-dogfooding). Committing it causes fresh clones and apply-update'd consumers to inherit framework-self mode incorrectly. Fix: \`git rm --cached .claude/framework-self.flag\` and add \`.claude/framework-self.flag\` to \`.gitignore\`."
-  fi
-}
+# Check 8 (framework-self.flag must not be committed) was removed in TASK-054
+# along with framework-self mode itself. Number retained so later check numbers
+# stay stable across docs and findings history.
 
 # --- Check 9: Detector-consumer determinism --------------------------
 # If any framework script/hook/agent has been recently added or modified
@@ -322,24 +385,32 @@ check_detector_consumers() {
 
   local recently_changed=""
   recently_changed=$(git -C "$PROJECT_ROOT" log --name-only --pretty=format: -30 -- \
-    .claude/hooks .claude/framework/insights .claude/framework/audit 2>/dev/null \
+    "${scan_paths[@]}" 2>/dev/null \
     | sort -u | grep -v '^$' || true)
   [ -z "$recently_changed" ] && return
 
-  local suspect_files=()
+  # Collect existing, non-known-consumer candidates (pure-bash filter — no
+  # per-item basename/grep spawns; the old loop spawned basename + up to two
+  # greps PER changed file, ~29 files ≈ 3.9s on Windows). `${f##*/}` is basename.
+  local candidates=()
   while IFS= read -r f; do
     [ -z "$f" ] && continue
-    [ ! -f "$PROJECT_ROOT/$f" ] && continue
-    # Skip known legitimate consumers
-    case "$(basename "$f")" in
-      $known_consumers) continue ;;
-    esac
-    # Does the file READ review-findings? Grep for read-like patterns.
-    if grep -qE '(cat|head|tail|jq|grep|awk|sed)[[:space:]][^|]*review-findings' "$PROJECT_ROOT/$f" 2>/dev/null \
-       || grep -qE '<[[:space:]]*[^|<>]*review-findings' "$PROJECT_ROOT/$f" 2>/dev/null; then
-      suspect_files+=("$f")
-    fi
+    [ -f "$PROJECT_ROOT/$f" ] || continue
+    case "${f##*/}" in "$known_consumers") continue ;; esac
+    candidates+=("$PROJECT_ROOT/$f")
   done <<<"$recently_changed"
+
+  # Does the file READ review-findings? One multi-file `grep -l` over ALL
+  # candidates in a SINGLE spawn (both read-like patterns alternated), instead
+  # of two greps per file. `grep -l` prints the (absolute) paths that matched;
+  # strip the root prefix back to the relative form the rest of the check uses.
+  local suspect_files=()
+  if [ ${#candidates[@]} -gt 0 ]; then
+    while IFS= read -r hit; do
+      [ -z "$hit" ] && continue
+      suspect_files+=("${hit#"$PROJECT_ROOT"/}")
+    done < <(grep -lE '(cat|head|tail|jq|grep|awk|sed)[[:space:]][^|]*review-findings|<[[:space:]]*[^|<>]*review-findings' "${candidates[@]}" 2>/dev/null || true)
+  fi
 
   [ ${#suspect_files[@]} -eq 0 ] && return
 
@@ -386,7 +457,7 @@ check_detector_consumers() {
 # manifest-updated), so this check is how the fix reaches existing clones.
 check_statusline() {
   [ ! -f "$SETTINGS_FILE" ] && return
-  command -v jq >/dev/null 2>&1 || return
+  command -v jq >/dev/null 2>&1 || return 0
   local cmd
   cmd=$(jq -r '.statusLine.command // empty' "$SETTINGS_FILE" 2>/dev/null || true)
   [ -z "$cmd" ] && return
@@ -426,9 +497,16 @@ check_gnu_toolchain() {
 # consumer-owned (never manifest-updated), so this doctor warning is the
 # propagation channel (TASK-024 principle). Fingerprints are entry titles
 # unique to the leaked upstream content; the clean templates ship none of
-# them. The upstream repo itself keeps its dev content under
-# .claude/framework/self/ — not scanned here — so it stays clean too.
+# them. The framework's OWN dev repo (identified by a committed
+# `.claude/.framework-dev-repo` marker, TASK-089) legitimately carries dev
+# content in its dirty root board, so it is skipped here (TASK-054 retired
+# the framework-self redirect; the dirty root IS the dev board now).
 check_state_file_leak() {
+  # Skip in the framework's own dev repo — its root board is the real dev board,
+  # not a leaked consumer template. Signal: a committed .claude/.framework-dev-repo
+  # marker (TASK-089 — replaced the old "02_solution/.claude/framework exists"
+  # signal once 02_solution/ was retired as a separate dev-build copy).
+  [ -f "$PROJECT_ROOT/.claude/.framework-dev-repo" ] && return
   local f hits=""
   for f in "$PROJECT_ROOT/.claude/GOTCHAS.md" "$PROJECT_ROOT/.claude/FRAMEWORK-SUGGESTIONS.md"; do
     [ -f "$f" ] || continue
@@ -440,27 +518,529 @@ check_state_file_leak() {
   add_finding "WARNING" "state-files" "${hits% }contains upstream framework-development entries (pre-2026-06-10 template leak, TASK-027). They describe the framework's OWN development, not this project — prune them (keep anything genuinely about this project). /housekeeping's adopted-feedback step is a good moment."
 }
 
+# --- Check 13: State-file structural grammar -------------------------
+# The .claude/ state files are a MACHINE-READ interface: downstream tooling
+# (board projections, dashboards, the framework's own scripts) parses
+# TASKS.md / DECISIONS.md / GOTCHAS.md / ECOSYSTEM.md by exact heading
+# levels, bold "**Field:**" markers, the `·` (U+00B7) middot separator, and a
+# fixed contract status enum. When a shape drifts these parsers don't error —
+# they SILENTLY drop the malformed entry (a task vanishes from a board, a
+# decision's Status won't parse, a contract goes undetected). This check
+# validates the grammars whose breakage causes SILENT loss and flags drift
+# before a human hits a degraded surface.
+#
+# Canonical board grammar (agreed cross-repo, CHANNEL round 2, 2026-06-26 — the
+# Console both READS and WRITES this board):
+#   - Task/bug entries are BRACKETED level-4 headings: `#### [TASK-N]` /
+#     `#### [BUG-N]`. Enforced — the Console writes `#### [BUG-n]` into the board
+#     (flag-as-bug), so a bare entry makes a flagged board MIXED. Bare entries
+#     still parse (the reader is widened) but are flagged (WARNING, aggregated).
+#   - The lifecycle includes a human `Verify` stage after Ready for Test; the
+#     Feature lane needs a `### Verify` section or board writeback to Verify
+#     fails (target_missing).
+#   - DECISIONS headings are date-headed (`## YYYY-MM-DD — Title`) OR DEC-N
+#     (`## DEC-N — Title`) — both are read; a heading that is neither is dropped.
+#     The `**Date:** · **Status:**` meta line (when present) needs the middot.
+#
+# Comment-aware: <!-- … --> blocks are stripped before matching the prose
+# files, so commented-out templates don't trip the checks. ECOSYSTEM.md is
+# matched RAW because its contract anchors ARE html comments.
+check_state_structure() {
+  local sd="$PROJECT_ROOT/.claude"
+  local tmps=() bad fl fs k
+  _ss_cleanup() { if [ ${#tmps[@]} -gt 0 ]; then rm -f "${tmps[@]}"; fi; }
+
+  # Blank out <!-- … --> comment blocks (inline + multi-line). Byte-safe.
+  _strip_html_comments() {  # <file> → stdout
+    awk '
+      { s=$0; out=""
+        if (inc) { i=index(s,"-->"); if(i){ s=substr(s,i+3); inc=0 } else { print ""; next } }
+        while ((o=index(s,"<!--"))>0) {
+          out=out substr(s,1,o-1); s=substr(s,o+4)
+          i=index(s,"-->"); if(i){ s=substr(s,i+3) } else { inc=1; s=""; break }
+        }
+        print out s
+      }
+    ' "$1"
+  }
+
+  # ---- TASKS.md ----
+  local tasks="$sd/TASKS.md"
+  if [ -f "$tasks" ]; then
+    local t; t=$(mktemp 2>/dev/null) || t="$sd/.doctor-tasks.$$"; tmps+=("$t")
+    _strip_html_comments "$tasks" > "$t"
+
+    grep -qiE '^##[[:space:]]+Feature[[:space:]]+Lane' "$t" \
+      || add_finding "WARNING" "state-structure" "TASKS.md has no \`## Feature Lane\` heading — board parsers collect tasks under the two lane headings; without it the entire Feature lane is invisible to them. Fix: restore the \`## Feature Lane\` heading."
+    grep -qiE '^##[[:space:]]+Bug[-[:space:]]+Fix[[:space:]]+Lane' "$t" \
+      || add_finding "WARNING" "state-structure" "TASKS.md has no \`## Bug-Fix Lane\` heading — bug entries can't route. Fix: restore the \`## Bug-Fix Lane\` heading."
+
+    # A '### Status' section before ANY '## …Lane' heading → its tasks never
+    # parse (status sections are only collected inside a lane).
+    fl=$(grep -nE '^##[[:space:]]+(Feature|Bug)' "$t" | head -1 | cut -d: -f1 || true)
+    fs=$(grep -nE '^###[[:space:]]' "$t" | head -1 | cut -d: -f1 || true)
+    if [ -n "$fs" ] && { [ -z "$fl" ] || [ "$fs" -lt "$fl" ]; }; then
+      add_finding "WARNING" "state-structure" "TASKS.md has a \`### …\` status section before the first \`## …Lane\` heading — tasks under it are silently dropped (status sections must sit inside a lane). Fix: put both lane headings above all status sections."
+    fi
+
+    # A task-looking ID at heading level 3 → parsers read '###' as a status
+    # column and '####' as the entry, so the entry silently vanishes.
+    while IFS= read -r bad; do
+      [ -z "$bad" ] && continue
+      add_finding "WARNING" "state-structure" "TASKS.md: \`$bad\` is a task ID at heading level 3 — board parsers read \`###\` as a status column and \`####\` as the entry, so this entry is silently dropped. Fix: make it a level-4 heading (\`#### …\`)."
+    done < <(grep -oE '^###[[:space:]]+\[?(TASK|BUG)-[0-9]+' "$t")
+
+    # Lane routing: BUG-* under Feature, or TASK-* under Bug-Fix. The ID
+    # prefix is authoritative, so a wrong-lane entry breaks status writeback.
+    # Matches bracketed AND bare IDs (bracket convention pending discussion).
+    while IFS= read -r bad; do
+      [ -z "$bad" ] && continue
+      add_finding "WARNING" "state-structure" "TASKS.md: $bad — the ID prefix is authoritative for lane routing, so a wrong-lane entry breaks status writeback in board tools. Fix: move it to the matching lane."
+    done < <(
+      awk '
+        /^##[[:space:]]+[Ff]eature[[:space:]]+[Ll]ane/                { lane="F"; next }
+        /^##[[:space:]]+[Bb]ug[-[:space:]]+[Ff]ix[[:space:]]+[Ll]ane/ { lane="B"; next }
+        /^####[[:space:]]+\[?(TASK|BUG)-[0-9]+/ {
+          match($0,/(TASK|BUG)-[0-9]+/); id=substr($0,RSTART,RLENGTH)
+          if (id ~ /^BUG-/  && lane=="F") print id " sits under the Feature lane"
+          if (id ~ /^TASK-/ && lane=="B") print id " sits under the Bug-Fix lane"
+        }
+      ' "$t"
+    )
+
+    # Bracket enforcement (agreed canonical, CHANNEL r2): task/bug entries are
+    # bracketed `#### [TASK-N]` / `#### [BUG-N]`. A bare `#### TASK-N` still
+    # parses on the widened Console reader, but the Console WRITES bracketed bug
+    # IDs (flag-as-bug), so a bare board goes mixed once a bug is flagged. One
+    # aggregated finding (a whole board of bare entries shouldn't shout per-line).
+    local bare_n bare_eg
+    bare_n=$(grep -cE '^####[[:space:]]+(TASK|BUG)-[0-9]+' "$t" || true)
+    if [ "${bare_n:-0}" -gt 0 ]; then
+      bare_eg=$(grep -oE '^####[[:space:]]+(TASK|BUG)-[0-9]+' "$t" | grep -oE '(TASK|BUG)-[0-9]+' | head -1 || true)
+      add_finding "WARNING" "state-structure" "TASKS.md has $bare_n task/bug entries with BARE IDs (e.g. \`$bare_eg\`) — the canonical board form is bracketed \`#### [TASK-N]\` / \`#### [BUG-N]\`. Downstream board tools WRITE bracketed IDs (flag-as-bug), so a bare board goes mixed once a bug is flagged. Fix: bracket the IDs."
+    fi
+
+    # Suffixed sub-IDs (TASK-111 #4): a `#### [TASK-Na]` / bare `#### TASK-Na`
+    # heading. The canonical board ID is NUMERIC (^(TASK|BUG)-[0-9]+$); a trailing
+    # alpha suffix is an unsanctioned wave-prep improvisation and NON-CANONICAL.
+    # Current Console builds (ccmaf-console 0.2.3+, TASK-117) surface it flagged;
+    # older builds dropped a bracketed `[TASK-Na]` / folded a bare `TASK-Na` into
+    # its numeric parent (collision). Either way it's off-grammar. One aggregated finding.
+    local sfx_n sfx_eg
+    sfx_n=$(grep -cE '^####[[:space:]]+\[?(TASK|BUG)-[0-9]+[a-z]+' "$t" || true)
+    if [ "${sfx_n:-0}" -gt 0 ]; then
+      sfx_eg=$(grep -oE '^####[[:space:]]+\[?(TASK|BUG)-[0-9]+[a-z]+' "$t" | grep -oE '(TASK|BUG)-[0-9]+[a-z]+' | head -1 || true)
+      add_finding "WARNING" "state-structure" "TASKS.md has $sfx_n task/bug entries with SUFFIXED IDs (e.g. \`$sfx_eg\`) — the canonical board ID is numeric \`(TASK|BUG)-[0-9]+\`. A trailing alpha suffix is NON-CANONICAL: current Console builds (ccmaf-console 0.2.3+) surface it flagged, older builds dropped/mis-parsed it — either way it's off-grammar. Fix: run \`/board-heal\` to renumber them to distinct numeric IDs, or allocate numeric IDs for sub-tasks up front."
+    fi
+
+    # Verify-stage section in the FEATURE lane specifically: the canonical
+    # lifecycle is `… Ready for Test → Verify → Done`; board writeback that moves
+    # a task to Verify needs the section to exist (else target_missing).
+    if grep -qiE '^##[[:space:]]+Feature[[:space:]]+Lane' "$t"; then
+      local has_verify
+      has_verify=$(awk '
+        /^##[[:space:]]/ { infeat = ($0 ~ /[Ff]eature[[:space:]]+[Ll]ane/) ? 1 : 0; next }
+        infeat && /^###[[:space:]]+[Vv]erify([[:space:]]|$)/ { print "yes"; exit }
+      ' "$t")
+      if [ -z "$has_verify" ]; then
+        add_finding "WARNING" "state-structure" "TASKS.md Feature lane has no \`### Verify\` section — the canonical lifecycle includes a human Verify stage (Ready for Test → Verify → Done) and board tools that move a task to Verify need the section to exist. Fix: add a \`### Verify\` section to the Feature lane."
+      fi
+    fi
+  fi
+
+  # ---- DECISIONS.md ----
+  # Entry headings may be date-headed (`## YYYY-MM-DD — Title`) OR DEC-N
+  # (`## DEC-N — Title`); both are read. A `##` entry heading that is neither is
+  # dropped. The `**Date:** · **Status:**` meta line (when present) needs the middot.
+  local dec="$sd/DECISIONS.md"
+  if [ -f "$dec" ]; then
+    local d; d=$(mktemp 2>/dev/null) || d="$sd/.doctor-dec.$$"; tmps+=("$d")
+    _strip_html_comments "$dec" > "$d"
+    while IFS= read -r bad; do
+      [ -z "$bad" ] && continue
+      add_finding "WARNING" "state-structure" "DECISIONS.md meta line lacks the \`·\` (U+00B7) middot between \`**Date:**\` and \`**Status:**\` — parsers need it to read the Status (a hyphen/pipe drops it):${bad#*:}. Fix: \`**Date:** <date> · **Status:** <status>\`."
+    done < <(awk '/^\*\*Date:\*\*.*\*\*Status:\*\*/ && index($0,"·")==0 {print NR": "$0}' "$d")
+    # A `##` entry heading that is neither an ISO date nor a DEC-N id → dropped.
+    while IFS= read -r bad; do
+      [ -z "$bad" ] && continue
+      add_finding "WARNING" "state-structure" "DECISIONS.md:${bad#*:} is a decision heading that is neither date-headed (\`## YYYY-MM-DD — …\`) nor \`## DEC-N — …\` — readers parse one of those two forms, so this entry is dropped. Fix: start the heading with an ISO date or a DEC-N id."
+    done < <(awk '
+      /^##[[:space:]]/ {
+        h=$0; sub(/^##[[:space:]]+/,"",h)
+        if (h ~ /^[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]/) next
+        if (h ~ /^DEC-[0-9]+/) next
+        print NR": "$0
+      }
+    ' "$d")
+  fi
+
+  # ---- GOTCHAS.md ----
+  local got="$sd/GOTCHAS.md"
+  if [ -f "$got" ]; then
+    local g; g=$(mktemp 2>/dev/null) || g="$sd/.doctor-got.$$"; tmps+=("$g")
+    _strip_html_comments "$got" > "$g"
+    # A Confidence marker not in the exact **Confidence:** bold form → value won't read.
+    while IFS= read -r bad; do
+      [ -z "$bad" ] && continue
+      add_finding "WARNING" "state-structure" "GOTCHAS.md:${bad#*:} is a Confidence marker but not the exact \`**Confidence:**\` bold form parsers require — its value won't read. Fix: \`**Confidence:** <value>\`."
+    done < <(awk '/^[[:space:]]*\**[Cc]onfidence:/ && $0 !~ /^\*\*Confidence:\*\*/ {print NR": "$0}' "$g")
+    # A Count line missing the middot before First seen.
+    while IFS= read -r bad; do
+      [ -z "$bad" ] && continue
+      add_finding "WARNING" "state-structure" "GOTCHAS.md:${bad#*:} is a Count line missing the \`·\` middot between the count and \`First seen:\` — it won't parse. Fix: \`Count: N · First seen: <date>\`."
+    done < <(awk '/^Count:/ && /First seen:/ && index($0,"·")==0 {print NR": "$0}' "$g")
+  fi
+
+  # ---- ECOSYSTEM.md contract anchors (RAW — anchors ARE html comments) ----
+  # Only an anchor ATTEMPT (a comment carrying both `contract:` and `status:`
+  # in order) is validated — a prose comment that merely mentions "contract:"
+  # is not an anchor and the parser ignores it, so it must not false-positive.
+  local eco="$sd/ECOSYSTEM.md"
+  if [ -f "$eco" ]; then
+    while IFS= read -r bad; do
+      [ -z "$bad" ] && continue
+      case "$bad" in *"status:draft"*|*"status:stable"*) continue ;; esac
+      add_finding "WARNING" "state-structure" "ECOSYSTEM.md contract anchor has an out-of-enum status (parsers accept ONLY \`status:draft\`/\`status:stable\`, case-sensitive — anything else means the contract is silently undetected): \`${bad#*:}\`. Fix: use \`status:draft\` or \`status:stable\`."
+    done < <(grep -nE '<!--[^>]*contract:[^>]*status:[^>]*-->' "$eco")
+  fi
+
+  # ---- Telemetry frozen keys (INFO; hook-generated) ----
+  local hm="$sd/telemetry/.hook-metrics"
+  if [ -f "$hm" ] && command -v jq >/dev/null 2>&1 && jq -e . "$hm" >/dev/null 2>&1; then
+    for k in generated_at total_events by_hook by_session; do
+      jq -e "has(\"$k\")" "$hm" >/dev/null 2>&1 \
+        || add_finding "INFO" "state-structure" "telemetry/.hook-metrics is missing the frozen snake_case key \`$k\` — dashboards key tiles off these names; a rename or re-case zeroes the tile. (Hook-generated — usually means an emitter changed.)"
+    done
+  fi
+
+  _ss_cleanup
+}
+
+# --- Check 14: Reconcile cadence ---------------------------------------
+# The reconciler (horizontal auditor — duplicate/seam/contract/convention
+# drift) is a STABILIZER, not part of the inner build loop: it runs on
+# demand (/reconcile), not per-task. That means it can silently fall behind
+# a fast build cadence with nothing to notice. This check counts tasks that
+# entered TASKS.md's Done section(s) since the last successful /reconcile
+# (the .last-reconcile watermark's mtime) and nags once the count clears a
+# threshold — the same "state doesn't get less broken over time, surface
+# it" reasoning as every other doctor check, applied to a cadence gap
+# instead of a structural break.
+#
+# Threshold is a variable, not a hardcoded number: RECONCILE_DUE_THRESHOLD
+# (default 5), consistent with the framework's other env-tunable knobs
+# (HEALTHCHECK_REMIND_DAYS, CLAUDE_CHECKPOINT_WATERMARK_PCT, etc.).
+#
+# Method: resolve the git commit nearest-before the watermark's mtime,
+# diff TASKS.md's Done-section task/bug IDs at that commit against Done at
+# HEAD (set difference via awk — no new tool dependency; `comm` was
+# considered and rejected to keep this check on the same jq/grep/awk/find(+git)
+# toolchain the rest of doctor.sh already assumes). [ASSUMED]: identifies
+# "Done" purely by the nearest preceding `###` heading matching /Done/,
+# same technique check_state_structure already uses — it does not
+# distinguish Feature-lane Done from Bug-Fix-lane Done (the task counts
+# either as "entered Done"), and per the task's own wording ("Done
+# columns", plural) that's the intended scope.
+#
+# Known limitation (documented, not fixed here): if /housekeeping archives
+# Done entries to tasks-archive.md inside the same window this check
+# looks at, an archived task disappears from "Done at HEAD" and is
+# undercounted. This is a conservative miss (undercounts, never
+# overcounts) and matches the risk tolerance check_detector_consumers
+# (Check 9) already accepts for its own git-log heuristic.
+check_reconcile_due() {
+  local wm="$PROJECT_ROOT/.claude/telemetry/.last-reconcile"
+  local tasks="$PROJECT_ROOT/.claude/TASKS.md"
+  [ -f "$wm" ] || return 0    # no reconcile has ever run — no baseline, not a failure (same pattern as Check 5)
+  [ -f "$tasks" ] || return 0
+  command -v git >/dev/null 2>&1 || return 0
+
+  local threshold="${RECONCILE_DUE_THRESHOLD:-5}"
+
+  # Portable mtime — same fallback chain as Check 9's _mtime, defined
+  # locally (not reused across functions) so this check has no hidden
+  # ordering dependency on Check 9 running first.
+  local wm_epoch
+  wm_epoch=$(stat -c %Y "$wm" 2>/dev/null || stat -f %m "$wm" 2>/dev/null \
+    || date -r "$wm" +%s 2>/dev/null || echo 0)
+  [ "$wm_epoch" = 0 ] && return
+
+  # Nearest commit at or before the watermark's mtime that touched TASKS.md.
+  # Git's approxidate accepts a raw "@<unix-epoch>" token directly.
+  local base_commit
+  base_commit=$(git -C "$PROJECT_ROOT" log -1 --before="@$wm_epoch" --format=%H -- .claude/TASKS.md 2>/dev/null || true)
+
+  # Extract Done-section task/bug IDs from a given ref (empty ref = working tree).
+  _rd_done_ids() {
+    local content
+    if [ -z "$1" ]; then
+      content=$(cat "$tasks" 2>/dev/null)
+    else
+      # `|| true`: an unreadable baseline (deletion commit, shallow clone)
+      # yields an empty ID set — fail toward nagging, never toward crashing.
+      content=$(git -C "$PROJECT_ROOT" show "$1:.claude/TASKS.md" 2>/dev/null || true)
+    fi
+    printf '%s\n' "$content" | awk '
+      /^##[[:space:]]/  { sect=""; next }
+      /^###[[:space:]]/ { sect=$0; next }
+      sect ~ /Done/ && /^####/ {
+        match($0,/(TASK|BUG)-[0-9]+/)
+        if (RSTART) print substr($0,RSTART,RLENGTH)
+      }
+    '
+  }
+
+  local current_ids base_ids new_count
+  current_ids=$(_rd_done_ids "" | sort -u)
+  if [ -n "$base_commit" ]; then
+    base_ids=$(_rd_done_ids "$base_commit" | sort -u)
+  else
+    # No resolvable baseline (squashed/shallow history): an empty base set
+    # makes every current Done ID count as new. Passing "" to _rd_done_ids
+    # would read the working tree and compare it to itself — never nag.
+    base_ids=""
+  fi
+
+  new_count=$(awk '
+    NR==FNR { base[$0]=1; next }
+    $0 != "" && !($0 in base) { n++ }
+    END { print n+0 }
+  ' <(printf '%s\n' "$base_ids") <(printf '%s\n' "$current_ids"))
+
+  [ "${new_count:-0}" -ge "$threshold" ] || return 0
+  add_finding "NAG" "reconcile" "reconcile due ($new_count tasks entered Done since the last /reconcile pass, threshold $threshold). The horizontal auditor (duplicate/seam/contract/convention drift) hasn't run since \`.claude/telemetry/.last-reconcile\` was last written. Fix: run \`/reconcile\` (defaults to scoped mode since that watermark)."
+}
+
+# --- Check 15: Board <-> reality coherence (contract:board-coherence) -
+# DETECT-ONLY. The board (TASKS.md) can drift from demonstrable reality while
+# passing the Stop hook (which checks state files were TOUCHED, not truthful).
+# Flags the drift class /board-heal restores: Verify tasks with no verify seed
+# (when opted into the Console), orphan seeds, a base ID in two
+# lifecycle columns, and a Ready-for-Review pile-up. Never writes TASKS.md or the
+# seeds. Comment-aware (a commented-out task block never counts). Bash-4 assoc
+# arrays are guaranteed by the top-of-file bash>=4 guard.
+check_board_coherence() {
+  local tasks="$PROJECT_ROOT/.claude/TASKS.md"
+  [ -f "$tasks" ] || return 0
+  local console_dir="$PROJECT_ROOT/.claude/console"
+  local verify_dir="$console_dir/verify"
+  local threshold="${RFR_STALL_THRESHOLD:-8}"
+
+  local t; t=$(mktemp 2>/dev/null) || t="$PROJECT_ROOT/.claude/.doctor-bc.$$"
+  # Multi-line-comment-aware strip (same technique as check_state_structure).
+  awk '
+    { s=$0; out=""
+      if (inc) { i=index(s,"-->"); if(i){ s=substr(s,i+3); inc=0 } else { next } }
+      while ((o=index(s,"<!--"))>0) {
+        out=out substr(s,1,o-1); s=substr(s,o+4)
+        i=index(s,"-->"); if(i){ s=substr(s,i+3) } else { inc=1; s=""; break }
+      }
+      print out s
+    }
+  ' "$tasks" > "$t"
+
+  # One awk pass -> "lane<TAB>status<TAB>fullId" per task/bug heading (suffix kept).
+  # status normalised: `### Ready for Test (foo)` -> `Ready for Test`.
+  local rows
+  rows=$(awk '
+    /^##[[:space:]]+[Ff]eature[[:space:]]+[Ll]ane/                 { lane="feature"; status=""; next }
+    /^##[[:space:]]+[Bb]ug[-[:space:]]+[Ff]ix[[:space:]]+[Ll]ane/ { lane="bug";     status=""; next }
+    /^###[[:space:]]/ {
+      status=$0; sub(/^###[[:space:]]+/,"",status)
+      # Strip trailing parenthetical group(s) only — parity with the Console
+      # parser (tasks-parser.ts normaliseStatus: /(\s*\([^)]*\))+\s*$/). A
+      # strip-from-first-paren would diverge on a mid-string paren heading.
+      while (status ~ /\([^)]*\)[[:space:]]*$/) sub(/[[:space:]]*\([^)]*\)[[:space:]]*$/,"",status)
+      sub(/[[:space:]]+$/,"",status); next
+    }
+    /^####[[:space:]]+\[?(TASK|BUG)-[0-9]+[a-z]*/ {
+      if (match($0,/(TASK|BUG)-[0-9]+[a-z]*/))
+        print lane "\t" status "\t" substr($0,RSTART,RLENGTH)
+    }
+  ' "$t")
+  rm -f "$t"
+
+  # --- Invariant 5: Ready-for-Review pile-up (NAG) ---
+  # Feature lane only ($1=="feature") — the pile-up symptom is a Feature-lane
+  # build that never walked the lifecycle; a customised Bug-Fix lane column of
+  # the same name must not inflate the count.
+  local rfr_count
+  rfr_count=$(printf '%s\n' "$rows" | awk -F'\t' '$1=="feature" && tolower($2)=="ready for review"{n++} END{print n+0}')
+  if [ "${rfr_count:-0}" -ge "$threshold" ]; then
+    add_finding "NAG" "board-coherence" "TASKS.md has $rfr_count tasks stalled in Ready for Review (threshold $threshold, RFR_STALL_THRESHOLD) — an autonomous/batch build that never walked the per-task review->test->Verify lifecycle looks exactly like this. Fix: run \`/board-heal\` to advance each to its truthful status (evidence-driven) and backfill verify seeds."
+  fi
+
+  # --- Invariant 4: same base ID in >1 lifecycle column ---
+  # base = full id minus any trailing alpha suffix (TASK-007a -> TASK-007). Flag
+  # only when a base has >1 DISTINCT full id AND >1 distinct column (the suffix-
+  # fold case); an exact-duplicate id is Check 7's job, not this one.
+  local lane status id base
+  declare -A _bc_cols _bc_fulls
+  while IFS=$'\t' read -r lane status id; do
+    [ -n "$id" ] || continue
+    base="$id"; while [[ "$base" == *[a-z] ]]; do base="${base%?}"; done   # strip suffix (pure bash — was sed/row, OPT r2-P2)
+    case "|${_bc_cols[$base]:-}|"  in *"|$status|"*) : ;; *) _bc_cols[$base]="${_bc_cols[$base]:+${_bc_cols[$base]}|}$status" ;; esac
+    case "|${_bc_fulls[$base]:-}|" in *"|$id|"*)     : ;; *) _bc_fulls[$base]="${_bc_fulls[$base]:+${_bc_fulls[$base]}|}$id" ;; esac
+  done <<< "$rows"
+  local b ncols nfull _s
+  for b in "${!_bc_cols[@]}"; do
+    # Count |-separated fields in pure bash (was 2 awk spawns/base ID — the
+    # dominant ~26s pathology on a large board, OPT r2-P2): strip non-pipes,
+    # field count = pipe count + 1.
+    _s="${_bc_cols[$b]//[^|]/}";  ncols=$(( ${#_s} + 1 ))
+    _s="${_bc_fulls[$b]//[^|]/}"; nfull=$(( ${#_s} + 1 ))
+    if [ "${ncols:-0}" -gt 1 ] && [ "${nfull:-0}" -gt 1 ]; then
+      add_finding "WARNING" "board-coherence" "TASKS.md: base task ID \`$b\` spans multiple lifecycle columns — entries [$(printf '%s' "${_bc_fulls[$b]}" | tr '|' ' ')] across [$(printf '%s' "${_bc_cols[$b]}" | tr '|' '/')]. A task can't be in two columns, and a suffixed sub-ID (\`${b}a\`) collides with its numeric parent in board tools. Fix: \`/board-heal\` renumbers suffixed IDs to distinct numeric IDs."
+    fi
+  done
+
+  # --- Invariant 1: Verify tasks missing a seed (opt-in gated) ---
+  # VERIFY ONLY — a task still queued in Ready-for-Test has NO seed by design:
+  # the Tester emits the seed AND moves the task to Verify atomically, only on
+  # PASS (commands/test.md, agents/framework/tester.md). Including Ready-for-Test
+  # here false-positives on every healthy board AND would make /board-heal write
+  # a premature approximated seed that, being WRITE-ONCE, permanently locks out
+  # the Tester's authoritative one.
+  if [ -d "$console_dir" ]; then
+    local missing_seeds="" slc
+    while IFS=$'\t' read -r lane status id; do
+      [ -n "$id" ] || continue
+      [ "$lane" = "feature" ] || continue
+      slc="${status,,}"                                # bash lowercase (was tr/row)
+      case "$slc" in verify) ;; *) continue ;; esac
+      # Only a numeric-canonical id can have a seed file (contract:verify-handback).
+      [[ "$id" =~ ^(TASK|BUG)-[0-9]+$ ]] || continue   # bash regex (was grep/row)
+      [ -f "$verify_dir/$id.json" ] || missing_seeds="${missing_seeds:+$missing_seeds, }$id"
+    done <<< "$rows"
+    if [ -n "$missing_seeds" ]; then
+      add_finding "WARNING" "board-coherence" "TASKS.md has Verify tasks with NO verify seed in .claude/console/verify/ — the Console renders the Verify tab from these seeds, so those stories are invisible there: $missing_seeds. Fix: run \`/board-heal\` to backfill a write-once seed per task."
+    fi
+
+    # --- Invariant 2: orphan seeds (seed with no board entry) ---
+    if [ -d "$verify_dir" ]; then
+      local board_ids orphans="" f sid
+      board_ids=$(printf '%s\n' "$rows" | awk -F'\t' '$3!=""{print $3}')
+      local _bids=$'\n'"$board_ids"$'\n'
+      for f in "$verify_dir"/*.json; do
+        [ -f "$f" ] || continue
+        sid="${f##*/}"; sid="${sid%.json}"                       # pure-bash basename (was basename/seed)
+        case "$_bids" in *$'\n'"$sid"$'\n'*) : ;; *) orphans="${orphans:+$orphans, }$sid" ;; esac  # membership (was grep/seed)
+      done
+      if [ -n "$orphans" ]; then
+        add_finding "WARNING" "board-coherence" "Verify seeds exist in .claude/console/verify/ with no matching board entry in TASKS.md (a renamed/renumbered/deleted task leaves a stale story in the Verify tab): $orphans. Fix: run \`/board-heal\` to reconcile, or remove the stale seed."
+      fi
+    fi
+  fi
+}
+
+# --- Check 16: State-file size budgets (OPT P3, TASK-139) ------------
+# The missing half of the enforcement asymmetry: the Stop hook defends state
+# FRESHNESS, but nothing defended state SIZE — so files grew unbounded until
+# TASKS.md became "too large to include". This warns before that, never blocks.
+check_state_budgets() {
+  local conf="$PROJECT_ROOT/.claude/framework/doctor/state-budgets.conf"
+  local override="$PROJECT_ROOT/.claude/state-budgets.local.conf"
+  [ -f "$override" ] && conf="$override"
+  [ -f "$conf" ] || return 0
+  local line rel budget path sz pct fix
+  while IFS= read -r line; do
+    line="${line%$'\r'}"
+    case "$line" in ''|'#'*) continue ;; esac
+    rel="${line%%=*}"; budget="${line##*=}"
+    case "$budget" in ''|*[!0-9]*) continue ;; esac
+    [ "$budget" -gt 0 ] || continue
+    path="$PROJECT_ROOT/$rel"
+    [ -f "$path" ] || continue
+    sz=$(wc -c < "$path" 2>/dev/null | tr -d ' '); case "$sz" in ''|*[!0-9]*) continue ;; esac
+    pct=$(( sz * 100 / budget ))
+    # Per-file remedy: rotate-state.sh only rotates TASKS + DECISIONS.
+    case "$rel" in
+      *TASKS.md|*DECISIONS.md)
+        fix="run /housekeeping (\`bash .claude/framework/housekeeping/rotate-state.sh\`) to archive old entries" ;;
+      *claude-progress.txt)
+        fix="run /housekeeping — its '## Rolling Summary' step archives older entries past ~30 (rotate-state.sh does not rotate this file)" ;;
+      *STATUS.md)
+        fix="prune superseded session prose per /housekeeping's '## State File Archiving' STATUS rule (rotate-state.sh does not rotate this file)" ;;
+      *GOTCHAS.md)
+        fix="retire resolved/superseded entries per /housekeeping's '## Memory reconciliation' and '### Semantic decay' sections (rotate-state.sh does not rotate this file)" ;;
+      *)
+        fix="archive or prune old entries (see /housekeeping)" ;;
+    esac
+    # Over budget is WARNING, never CRITICAL: a doctor CRITICAL halts unattended
+    # runs, and size is loud-but-recoverable ("never blocks").
+    if [ "$pct" -ge 100 ]; then
+      add_finding "WARNING" "state-budget" "\`$rel\` is ${sz}B, OVER its ${budget}B budget (${pct}%) — boot reads and board loading are at risk. Fix: $fix."
+    elif [ "$pct" -ge 80 ]; then
+      add_finding "WARNING" "state-budget" "\`$rel\` is ${sz}B, ${pct}% of its ${budget}B budget — approaching the ceiling. Fix (soon): $fix."
+    fi
+  done < "$conf"
+}
+
+# --- Check: v2 migration state (legacy-layout, TASK-166) --------------
+# Signal-only: flags the two BROKEN half-migrated states. A healthy v1
+# project stays silent (the CLAUDE.framework.md cold-start step 0 owns the
+# migration OFFER; doctor only owns broken state).
+check_legacy_layout() {
+  # The framework's own dev repo runs v2 as its live workflow while the root
+  # tree stays authored v1 source (TASK-176) — both halves of the
+  # half-migrated heuristic are legitimately true there, permanently.
+  # Consumers never have the marker, so their behaviour is unchanged.
+  [ -f "$PROJECT_ROOT/.claude/.framework-dev-repo" ] && return
+
+  local fv="$PROJECT_ROOT/.claude/.framework-version"
+  local ts="$PROJECT_ROOT/.claude/.migrate-v2-tombstone"
+  local v2=0
+  [ -f "$fv" ] && grep -Eq '^[[:space:]]*FRAMEWORK_LINE=v2[[:space:]]*$' "$fv" 2>/dev/null && v2=1
+
+  # Half-migrated A: deletions happened (tombstone exists) but the v2
+  # activation line was never written — the crash window of migrate-v2.sh.
+  if [ -f "$ts" ] && [ "$v2" = 0 ]; then
+    add_finding "CRITICAL" "legacy-layout" "A v2 migration tombstone exists (.claude/.migrate-v2-tombstone) but .framework-version has no FRAMEWORK_LINE=v2 — the migration was interrupted after deletions began. Retired bundled pieces may already be gone while the v2 plugins are not yet activated. ANY other CRITICAL/WARNING findings in this scan (missing manifest paths, cross-refs, CLAUDE-include) are EXPECTED FALLOUT of this state — do not fix them individually. Fix: if it still exists, re-run \`bash .claude/framework/update/migrate-v2.sh\` to completion (tombstone-aware, resumes safely); if update/ was already deleted, restore the pre-migration state with \`git restore --source=HEAD -- .\` after preserving any wanted edits, then re-run the migration from a fresh v2.0 update."
+    return
+  fi
+
+  # Half-migrated B: the v2 line is active yet THIS bundled v1 doctor is
+  # still running — retired v1 copies were never deleted (hand-written v2
+  # line, or a migration that died before its deletion phase).
+  if [ "$v2" = 1 ]; then
+    add_finding "WARNING" "legacy-layout" "FRAMEWORK_LINE=v2 is set but the bundled v1 framework is still present (this bundled doctor is running — it is itself a retired path). The v2 core plugin and the v1 copies are BOTH active: duplicate hooks/commands are likely. Fix: run \`bash .claude/framework/update/migrate-v2.sh\` (remove the v2 line first if it was added by hand) so the retired copies are deleted and tombstoned."
+  fi
+}
+
 # --- Run all checks --------------------------------------------------
-check_hooks
-check_cross_refs
-check_claude_include
-check_manifest_paths
-check_framework_version
-check_task_duplicates
-check_framework_self_flag_untracked
-check_detector_consumers
-check_statusline
-check_gnu_toolchain
-check_state_file_leak
+# legacy-layout runs FIRST: in a half-migrated tree the manifest/cross-ref
+# checks below fire a wall of per-path CRITICALs whose remedies ("restore
+# the path") fight the migration — the one correct diagnosis must lead.
+_DOCTOR_START=$(_dnow_ms)
+_run check_legacy_layout
+_run check_hooks
+_run check_cross_refs
+_run check_claude_include
+_run check_manifest_paths
+_run check_framework_version
+_run check_task_duplicates
+_run check_detector_consumers
+_run check_statusline
+_run check_gnu_toolchain
+_run check_state_file_leak
+_run check_state_structure
+_run check_reconcile_due
+_run check_board_coherence
+_run check_state_budgets
+
+if [ "$DOCTOR_PROFILE" = 1 ]; then
+  printf 'PROFILE %-26s %6s ms (total)\n' "ALL-CHECKS" "$(( $(_dnow_ms) - _DOCTOR_START ))" >&2
+  exit 0
+fi
 
 # --- Write flag file if any findings ---------------------------------
 if [ ${#findings[@]} -eq 0 ]; then
   exit 0
 fi
 
-# Sort findings by severity: CRITICAL first, WARNING next, INFO last.
+# Sort findings by severity: CRITICAL first, WARNING next, INFO next, NAG last.
 sorted_findings=()
-for sev in CRITICAL WARNING INFO; do
+for sev in CRITICAL WARNING INFO NAG; do
   for f in "${findings[@]}"; do
     [[ "$f" == "$sev|"* ]] && sorted_findings+=("$f")
   done
@@ -470,12 +1050,13 @@ now_iso=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 crit_count=$(printf '%s\n' "${findings[@]}" | grep -c '^CRITICAL|' || true)
 warn_count=$(printf '%s\n' "${findings[@]}" | grep -c '^WARNING|' || true)
 info_count=$(printf '%s\n' "${findings[@]}" | grep -c '^INFO|' || true)
+nag_count=$(printf '%s\n' "${findings[@]}" | grep -c '^NAG|' || true)
 
 {
   echo "# Framework Doctor — Issues Detected"
   echo
   echo "**Scan time:** $now_iso"
-  echo "**Findings:** $crit_count CRITICAL, $warn_count WARNING, $info_count INFO"
+  echo "**Findings:** $crit_count CRITICAL, $warn_count WARNING, $info_count INFO, $nag_count NAG"
   echo
   echo "## Findings"
   echo
@@ -498,10 +1079,14 @@ info_count=$(printf '%s\n' "${findings[@]}" | grep -c '^INFO|' || true)
   echo "INFO findings are informational only — no action required unless"
   echo "a related feature is relevant to you."
   echo
+  echo "NAG findings are cadence reminders, not broken state — run the"
+  echo "named command when convenient; they will not resolve themselves"
+  echo "on the next scan the way a fixed WARNING would."
+  echo
   echo "To dismiss for this session: \`rm .claude/.framework-doctor-findings.md\`."
   echo "Doctor re-scans on every cold start (no throttle — state issues"
   echo "don't get less broken over time)."
 } > "$FLAG_FILE"
 
-echo "doctor: ${#findings[@]} finding(s) ($crit_count CRITICAL, $warn_count WARNING, $info_count INFO) — see $FLAG_FILE"
+echo "doctor: ${#findings[@]} finding(s) ($crit_count CRITICAL, $warn_count WARNING, $info_count INFO, $nag_count NAG) — see $FLAG_FILE"
 exit 0

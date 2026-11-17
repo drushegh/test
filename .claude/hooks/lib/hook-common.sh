@@ -8,7 +8,7 @@
 #   CLAUDE_DISABLED_HOOKS = "id1,id2 id3"   (comma/space-separated stable IDs)
 #
 # Profile semantics — each hook declares a TIER when it calls hook_enabled:
-#   safety  — runs in ALL profiles (only block-dangerous today)
+#   safety  — runs in ALL profiles (block-dangerous + guard-interpreter-check)
 #   normal  — runs in standard + strict; skipped in minimal
 #   strict  — runs only in strict (reserved for opt-in extra-strict hooks)
 #
@@ -17,7 +17,15 @@
 #
 # Stable hook IDs (keep in sync with settings.json registrations):
 #   block-dangerous, enforce-state, filter-test-output, drift-guard,
-#   format, lint, verify-deps, suggest-compact, cost-tracker
+#   format, lint, verify-deps, suggest-compact, cost-tracker,
+#   reanchor, precompact-snapshot, postcompact-archive, checkpoint-watermark
+#     (these four = TASK-052 session-lifecycle hooks)
+#   console-heartbeat   (TASK-066 Console-integration hook)
+#   console-autostart   (TASK-115 — SessionStart auto-start of an opted-in Console)
+#   guard-interpreter-check (safety tier — reports on block-dangerous's own
+#     health; Audtor 2026-07-02 M1-residual fix)
+#   session-start-marker   (records the session-scoping watermark that
+#     enforce-state-update.sh reads; Audtor 2026-07-02 minor fix)
 #
 # Usage in a bash hook (FAIL-OPEN: if this helper is absent, the hook
 # runs exactly as before — default behaviour is never changed by adding
@@ -134,3 +142,175 @@ hook_enabled() {
       ;;
   esac
 }
+
+# resolve_python <candidate...> — print the first candidate that is BOTH on
+# PATH and can actually execute a trivial script; return 1 with no output
+# if none can (Audtor 2026-07-02, M1 residual (a)).
+#
+# `command -v python3` alone is not enough: a name can resolve on PATH and
+# still not run. The concrete, observed case is the Windows Store's
+# python3.exe app-execution alias — on a host with no real Python installed
+# it resolves via PATH resolution and then either opens the Store or exits
+# non-zero instead of executing, so a guard that only checked `command -v`
+# would think it found a working interpreter and silently never run.
+# Actually invoking `-c 'import sys'` catches that class of stub, plus any
+# other broken/aliased/shadowed "python" on a consumer's PATH.
+resolve_python() {
+  local cand
+  for cand in "$@"; do
+    if command -v "$cand" >/dev/null 2>&1 && "$cand" -c 'import sys' >/dev/null 2>&1; then
+      printf '%s' "$cand"
+      return 0
+    fi
+  done
+  return 1
+}
+
+# unique_tmp <dest> — print a same-directory temp path for the tmp-write +
+# rename pattern used across the hooks (write to a temp file, then
+# atomically `mv` it over <dest> on the same filesystem). A FIXED name like
+# "<dest>.tmp" lets two concurrent hook fires (e.g. two PostToolUse
+# invocations racing on the same state file) write the SAME temp file and
+# clobber each other — the loser's content silently wins or the winner's
+# write is torn (Audtor 2026-07-02 minor). Each caller gets its own path
+# instead, so two racing writers each finish their own tmp file cleanly and
+# the later `mv` simply decides which write's result survives — no
+# interleaved/truncated content either way.
+#
+# mktemp keeps the tmp file in <dest>'s directory (same filesystem — the
+# `mv` that follows stays an atomic rename, never a cross-fs copy+unlink).
+# Falls back to a PID+RANDOM suffix if mktemp is unavailable/fails; never
+# fails outright, since every caller's own write+rename already tolerates
+# a bad tmp path via its existing `|| rm -f` cleanup.
+unique_tmp() {
+  local dest="$1" t
+  t=$(mktemp "${dest}.XXXXXX" 2>/dev/null) && { printf '%s' "$t"; return 0; }
+  printf '%s' "${dest}.tmp.$$.${RANDOM}"
+}
+
+# nearest_package_json_dir <start-dir> [<ceiling-dir>] — print the closest
+# ancestor of <start-dir> (inclusive) that contains a package.json, walking
+# upward and stopping at <ceiling-dir> (inclusive) if given, or at the
+# filesystem root otherwise. Prints nothing and returns 1 if none is found
+# in range.
+#
+# Why walk at all: a consumer's npm root is not always the repo root (this
+# framework's OWN repo is the example — its npm root is console/, not the
+# repo root auto-format.sh/auto-lint.sh used to check). A check anchored
+# only at the current directory is silently dead for any such layout
+# (Audtor 2026-07-02 minor).
+#
+# Termination is deliberately explicit, not inferred from string shape:
+# an earlier version detected "reached the top" by comparing `${dir%/*}`
+# to `dir`, which is wrong at "/" itself — `${dir%/*}` on "/" yields "",
+# which then got defaulted back to "/", so `dir` never changed and the
+# old-vs-new comparison (taken BEFORE that default) never matched. That
+# hung in an infinite loop the first time a real caller's ceiling didn't
+# string-match the walk (below — git-for-windows returning a Windows-
+# style toplevel while $PWD is POSIX-style is a real, observed case on
+# this platform, not a hypothetical). Checking `[ "$dir" = "/" ]` BEFORE
+# computing the next parent makes the walk provably finite regardless of
+# whether the ceiling ever matches.
+nearest_package_json_dir() {
+  local dir="${1%/}" ceiling="${2:-}"
+  ceiling="${ceiling%/}"
+  [ -z "$dir" ] && dir="/"
+  while :; do
+    if [ -f "$dir/package.json" ]; then
+      printf '%s' "$dir"
+      return 0
+    fi
+    [ -n "$ceiling" ] && [ "$dir" = "$ceiling" ] && break
+    case "$dir" in
+      /|[A-Za-z]:) break ;;   # filesystem root or a bare drive root — stop
+    esac
+    local parent="${dir%/*}"
+    [ -z "$parent" ] && parent="/"
+    [ "$parent" = "$dir" ] && break   # safety net; should be unreachable
+    dir="$parent"
+  done
+  return 1
+}
+
+# node_project_dir_for <file-path> — resolve <file-path> to an absolute
+# path (relative to $PWD if it isn't already one), then find the nearest
+# ancestor package.json, bounded at CLAUDE_POSTEDIT_ROOT (set by
+# post-edit-dispatch.sh) or the current git repo root — so an unrelated
+# package.json further up the real filesystem is never picked up. Prints
+# the directory a Node tool (npx/eslint/prettier) should be run FROM, or
+# nothing if none exists in range.
+node_project_dir_for() {
+  local f="$1"
+  case "$f" in
+    /*) : ;;
+    *)  f="${PWD%/}/$f" ;;
+  esac
+  local ceiling="${CLAUDE_POSTEDIT_ROOT:-}"
+  [ -z "$ceiling" ] && ceiling=$(git rev-parse --show-toplevel 2>/dev/null)
+  # git-for-windows' `git rev-parse --show-toplevel` has been observed to
+  # print a native Windows-style path (C:/Users/...) even from inside
+  # git-bash, while $PWD-derived paths here are always POSIX-style
+  # (/c/Users/...) — the SAME DA-H1 class of mismatch normalize_tool_path
+  # already exists to fix. Without normalizing both sides, the ceiling
+  # never string-matches the walk: nearest_package_json_dir still
+  # terminates (it no longer hangs), but it would walk past the intended
+  # boundary and could pick up an unrelated package.json further up the
+  # real filesystem.
+  if command -v normalize_tool_path >/dev/null 2>&1; then
+    f=$(normalize_tool_path "$f")
+    ceiling=$(normalize_tool_path "$ceiling")
+  fi
+  nearest_package_json_dir "$(dirname "$f")" "$ceiling"
+}
+
+# Portable timeout — canonical copy of this block (and kv_file_get below).
+# Scripts source this file when they can and keep a byte-identical inline
+# fallback when they must run standalone; tests/shared_helpers_drift.bats
+# enforces every copy identical to this one.
+# >>> run_tmo
+_TMO_BIN=""
+if command -v timeout >/dev/null 2>&1; then _TMO_BIN=timeout
+elif command -v gtimeout >/dev/null 2>&1; then _TMO_BIN=gtimeout
+fi
+run_tmo() { # <secs> <cmd> [args...] — exit 124 when killed at the budget
+  local secs="$1"; shift
+  if [ -n "$_TMO_BIN" ]; then "$_TMO_BIN" "$secs" "$@"; return $?; fi
+  if command -v perl >/dev/null 2>&1; then
+    # fork+wait (not alarm+exec: an alarm does not survive exec on every
+    # platform); the child leads its own process group so on expiry TERM
+    # then KILL reach grandchildren too (a surviving grandchild would hold a
+    # $(...) pipe open past the budget), and exit 124 like GNU timeout.
+    perl -e 'my $t = shift; my $pid = fork; defined $pid or exit 127;
+      if (!$pid) { setpgrp(0, 0); exec { $ARGV[0] } @ARGV or exit 127 }
+      setpgrp($pid, $pid);
+      $SIG{ALRM} = sub { kill "TERM", -$pid; sleep 1; kill "KILL", -$pid; exit 124 };
+      alarm $t; waitpid($pid, 0);
+      exit(($? & 127) ? 128 + ($? & 127) : $? >> 8)' "$secs" "$@"
+    return $?
+  fi
+  "$@"
+}
+# <<< run_tmo
+
+# >>> kv_file_get
+kv_file_get() { # <file> <KEY> — print KEY's value from a KEY=VALUE file; 1 if absent
+  # Never sources the file (it may be project-owned and committed — sourcing
+  # would execute arbitrary shell from any clone). CRLF-safe; the LAST
+  # assignment wins; an optional `export ` prefix is accepted. A value that
+  # starts with a quote runs to its matching close quote (so `KEY="a b"  #
+  # note` is `a b`); an unquoted value ends at the first whitespace followed
+  # by `#` (`KEY=x   # OPTIONAL` is `x`), trailing whitespace trimmed.
+  local _line _val
+  _line=$(tr -d '\r' < "$1" 2>/dev/null \
+    | grep -E "^[[:space:]]*(export[[:space:]]+)?$2=" | tail -1)
+  [ -n "$_line" ] || return 1
+  _val="${_line#*=}"
+  case "$_val" in
+    \"*) _val="${_val#\"}"; _val="${_val%%\"*}" ;;
+    \'*) _val="${_val#\'}"; _val="${_val%%\'*}" ;;
+    *) _val="${_val%%[[:space:]]#*}"
+       _val="${_val%"${_val##*[![:space:]]}"}" ;;
+  esac
+  printf '%s' "$_val"
+}
+# <<< kv_file_get

@@ -31,6 +31,21 @@ Rules:
   node.
 - `ResourceLoader.load()` caches by path; `CACHE_MODE_IGNORE` for
   fresh copies.
+- `ResourceLoader.exists()`/`load()` have been seen to succeed for a
+  file deleted from disk in the same session (served from the cache or
+  stale import data). In editor tooling and tests that check deletion,
+  use `FileAccess.file_exists()`. Don't use that in exported games for
+  imported assets: they are remapped into the `.pck`, and the original
+  path no longer exists as a file.
+- `ResourceSaver.save(res, path)` does not set `res.resource_path`
+  unless you pass `ResourceSaver.FLAG_CHANGE_PATH`. A container
+  Resource that references it afterwards **embeds a copy** instead of
+  linking the file. Save with the flag (or `take_over_path`) before
+  referencing.
+- Loaded resources are shared: setting `loop` on a cached
+  `AudioStream` (or any property on a cached texture or material)
+  changes it for every user of that path. `duplicate()` first, or set
+  it in the `.import` file and re-import.
 - Save systems: custom Resource + `ResourceSaver` is quick but
   EXECUTES code on load (`set` calls) — for untrusted saves prefer
   JSON/ConfigFile (no code execution) and validate
@@ -83,7 +98,12 @@ regenerate. Runner/hosting wiring → `devops-development`.
 Text scenes/resources diff well — review them like code (node
 renames and reordered properties are the noise to tolerate). Asset
 budgets and import settings (`.import` files DO get committed)
-reviewed alongside. For localisation: `tr()` + translation CSV/PO
+reviewed alongside. An edited `.import` takes effect only after a
+re-import (`godot --headless --path . --import`).
+
+Android: `application/config/quit_on_go_back` defaults to `true`, so
+the system Back button quits the game outright. Turn it off and handle
+`NOTIFICATION_WM_GO_BACK_REQUEST` if Back should open a pause menu. For localisation: `tr()` + translation CSV/PO
 from day one if multi-language is plausible.
 
 ## Data at scale

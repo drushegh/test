@@ -163,6 +163,47 @@ foregrounds; test both themes.
 colours in markup; class soup duplicated across siblings (extract a
 component or variant — see components.md).
 
+## v4 Traps (seen in real projects)
+
+- **Setup**: no `tailwind.config.js` is auto-detected — tokens live in CSS
+  `@theme`; a legacy JS config loads only via `@config "./tailwind.config.js"`.
+  In Vite use the `@tailwindcss/vite` plugin (no PostCSS config needed);
+  elsewhere `@tailwindcss/postcss` (which replaces `autoprefixer` and
+  `postcss-import`).
+- **`@theme` is build-time only.** It is compiled into utilities; a stylesheet
+  injected at runtime (`<link>`/`<style>` for a user skin or theme pack) that
+  contains `@theme` is ignored as an unknown at-rule. Ship runtime themes as
+  plain `:root { --color-…: … }` / `[data-theme="x"] { … }` overrides of the
+  token variables.
+- **Individual transform properties.** `translate-*`, `scale-*` and
+  `rotate-*` set the CSS `translate`/`scale`/`rotate` properties, not
+  `transform`. `transition-transform` covers them, but an arbitrary
+  `transition-[transform]` or `transition-[opacity,transform]` does not —
+  list `translate`/`scale`/`rotate` explicitly. `transform-none` no longer
+  resets them (use `scale-none` etc.).
+- **Cascade layers.** v4 emits real `@layer theme, base, components,
+  utilities`. Any custom CSS you write *outside* a layer beats every utility
+  regardless of source order or specificity — a `.card { border-left: … }`
+  silently overrides `border-l-4` on the same element. Put component classes
+  in `@layer components` (or define them with `@utility` so utilities can
+  override them). In v3 the same symptom came from defining component
+  classes after `@tailwind utilities`.
+- **Changed defaults**: borders default to `currentColor` (not gray-200);
+  `ring` is 1px `currentColor` (v3's look is `ring-3` + a colour); `space-y-*`
+  now sets `margin-bottom` on `:not(:last-child)`; `hover:` applies only on
+  hover-capable devices; CSS-variable shorthand is `bg-(--brand)` (was
+  `bg-[--brand]`); `!` goes at the end (`flex!`).
+- **Scale classes bypass project tokens.** `z-50`, `tracking-wider`,
+  `rounded-lg` compile to Tailwind's defaults even when they happen to equal
+  a project token today. If the project defines `--z-modal` or a tracking
+  scale, use the project's utilities so retuning the token reaches them.
+- **Opacity on arbitrary variables works**: `bg-(--surface)/60` composes via
+  `color-mix()`; no need for separate alpha tokens.
+- **`cn()` needs tailwind-merge.** A `cn()` built on `clsx` alone keeps both
+  conflicting classes (`p-2 p-4`) and the winner is whichever comes later
+  in the generated stylesheet, not in the class string. Use
+  `twMerge(clsx(...))` for components that accept a `className` override.
+
 ## v3 → v4 Migration Checklist
 
 - [ ] `tailwind.config.ts` → CSS `@theme` block

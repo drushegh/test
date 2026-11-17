@@ -32,6 +32,23 @@ from the test.
   don't depend on a previous test having run.
 - Reset global/singleton state, clocks and seeded randomness between tests.
 
+## Pin time and ids
+
+- **Seed data that evaluates `Date` at import drifts** a day per calendar day,
+  so "due tomorrow" fixtures eventually fail or, worse, pass for the wrong
+  reason. Freeze the clock *before* the seed module loads (in Vitest, inside
+  `vi.hoisted(...)` or a setup file that runs first).
+- **Mock/in-memory stores must seed their id counter from the highest seeded
+  id**, not zero, or the first created record collides with a fixture.
+
+## Isolate tests from real user state
+
+Tests that read or write the real user profile (settings file, app data dir,
+browser profile, a game's save directory) are flaky and destructive: they
+depend on the developer's machine and can corrupt it. Add a test/debug-only
+override for the profile location (a CLI flag or env var pointing at a scratch
+path), reset it per test, and never let tests default to the real profile.
+
 ## Real dependencies with testcontainers
 
 For integration tests, run the **real** database/broker in a throwaway

@@ -53,7 +53,11 @@ pac solution import --path ./solutions/ContosoCore.zip \
 
 `--async` for anything sizeable (first-party apps take 10–20 min — poll,
 don't re-import); `--activate-plugins` or imported steps arrive
-disabled; `--import-mode ForceUpgrade` for already-exists conflicts.
+disabled. `pac solution import` has no "import mode" option — for an
+existing solution use `--stage-and-upgrade` (managed upgrade: import as
+holding + apply upgrade in one step), `--force-overwrite` (overwrite
+unmanaged customizations), or `--skip-lower-version` (skip when the same
+or a higher version is already installed).
 Managed exports (`--managed true`) for downstream promotion — in
 pipelines, build managed from the unmanaged source.
 
@@ -74,7 +78,7 @@ Verify, minimally:
 | Table missing after import | Not in the solution | add-solution-component, re-export |
 | Form check fails immediately | Async publishing | wait 30s, retry |
 | Import stuck at 0% | Still running | poll at 60s intervals |
-| "Solution already exists" | Version conflict | `--import-mode ForceUpgrade` |
+| "Solution already exists" | Version conflict | bump the version and re-import with `--stage-and-upgrade` (managed) or `--force-overwrite` (unmanaged) |
 
 ## Security Roles (deployment-adjacent)
 
@@ -89,6 +93,8 @@ pac admin assign-user --user user@contoso.com \
 
 App users (service principals) for integrations get purpose-built
 roles, never System Administrator by default.
+Building custom roles (App Opener baseline, depth clamping), team
+ownership and testing as a non-admin persona: security-model.md.
 
 ## Pipeline Shape (CI/CD)
 
@@ -97,4 +103,4 @@ assemblies → managed solution artefact → import to test (service
 principal auth, `pac auth create --applicationId ...`) → validation
 checks → approved promotion to prod. Environment URLs and credentials
 live in pipeline variables/key vault, never in the repo. (Pipeline
-tooling itself: the devops-development skill when it lands.)
+tooling itself: the devops-development skill.)

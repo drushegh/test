@@ -12,7 +12,10 @@ projects: default to minimal APIs unless controllers are requested.
 Dedicated request/response types — never EF entities (they leak navigation
 properties and internals). All DTOs are `sealed record` (immutable,
 value equality, CA1852-friendly), with `<summary>` XML doc comments —
-these flow into the generated OpenAPI spec automatically.
+on .NET 10+ the built-in OpenAPI generator picks these up once the project
+sets `<GenerateDocumentationFile>true</GenerateDocumentationFile>` (.NET 9's
+built-in generator ignores XML docs; use `.WithSummary`/`.WithDescription`
+or `[EndpointSummary]` there).
 
 ```csharp
 /// <summary>Represents a product returned by the API.</summary>
@@ -83,10 +86,12 @@ minimal APIs.
 ## OpenAPI
 
 .NET 9+: built-in support — `builder.Services.AddOpenApi()` +
-`app.MapOpenApi()` (dev), document at `/openapi/v1.json`. **Do not add any
-`Swashbuckle.*` package to .NET 9+ projects** (compatibility issues);
-Swashbuckle is acceptable on .NET 8 and earlier, and keep it if already
-installed unless asked to remove.
+`app.MapOpenApi()` (dev), document at `/openapi/v1.json`. **Prefer the
+built-in `Microsoft.AspNetCore.OpenApi` on .NET 9+** — the templates dropped
+Swashbuckle in .NET 9, so don't add it to new projects by reflex. Swashbuckle
+is still maintained and works on .NET 9+; keep it where already installed
+(or where you need its generation features) unless asked to remove it. A
+UI (Swagger UI / Scalar) is a separate package with either generator.
 
 ## Error Handling
 
@@ -99,7 +104,12 @@ app.UseExceptionHandler();
 app.UseStatusCodePages();
 ```
 
-Custom mapping via `IExceptionHandler` (place in `Middleware/`):
+Custom mapping via `IExceptionHandler` (place in `Middleware/`). Map only
+**your own domain exception types** — never BCL types like
+`ArgumentException`/`InvalidOperationException`/`KeyNotFoundException`:
+those are thrown by framework and library code for genuine bugs (a
+dictionary miss, a disposed context, an EF query misuse), and mapping them
+turns server faults into misleading 4xx responses that hide the 500:
 
 ```csharp
 internal sealed class ApiExceptionHandler(ILogger<ApiExceptionHandler> logger)
@@ -110,9 +120,10 @@ internal sealed class ApiExceptionHandler(ILogger<ApiExceptionHandler> logger)
     {
         var (statusCode, title) = exception switch
         {
-            KeyNotFoundException => (StatusCodes.Status404NotFound, "Not Found"),
-            ArgumentException => (StatusCodes.Status400BadRequest, "Bad Request"),
-            InvalidOperationException => (StatusCodes.Status409Conflict, "Conflict"),
+            // app-defined types, e.g. `public sealed class NotFoundException : Exception`
+            NotFoundException => (StatusCodes.Status404NotFound, "Not Found"),
+            DomainValidationException => (StatusCodes.Status400BadRequest, "Bad Request"),
+            ConflictException => (StatusCodes.Status409Conflict, "Conflict"),
             _ => (0, (string?)null)
         };
         if (statusCode == 0) return false;            // default handler takes it
@@ -155,6 +166,14 @@ After implementing endpoints, add a `.http` file in the project root with
 one request per endpoint (realistic bodies, at least one error path, port
 matching `launchSettings.json`) — living documentation plus a manual test
 harness.
+
+**Local multi-tenant subdomains**: use `tenant1.localhost` — `.localhost`
+is reserved for loopback (RFC 6761) and Chromium/Firefox resolve any
+`*.localhost` name to 127.0.0.1 with no DNS. Avoid public wildcard-DNS
+helpers (`localtest.me`, `nip.io`-style): filtered or corporate DNS often
+blocks them (`ERR_NAME_NOT_RESOLVED`). Non-browser clients may still need
+help (verify yours): `curl --resolve tenant1.localhost:5001:127.0.0.1 …`
+or a `Host:` header.
 
 ## Validation Checklist
 

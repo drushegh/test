@@ -21,10 +21,12 @@ LLMs — primarily the Claude API. The defining property of this domain:
 **the runtime is nondeterministic, so engineering discipline moves into
 contracts (schemas, tool definitions, prompts-as-code) and evals.**
 
-Version context (June 2026 — fast-moving, re-verify): current Claude
-models are Fable 5, Opus 4.8, Sonnet 4.6, Haiku 4.5 (aliases
-`claude-fable-5`, `claude-opus-4-8`, `claude-sonnet-4-6`,
-`claude-haiku-4-5`). Query the Models API for live capabilities rather
+Version context (September 2026 — fast-moving, re-verify): current
+Claude models are Fable 5.1, Opus 5.5, Opus 5, Sonnet 5 and Haiku 4.5
+(aliases `claude-fable-5-1`, `claude-opus-5-5`, `claude-opus-5`,
+`claude-sonnet-5`, `claude-haiku-4-5`); Fable 5, Opus 4.8 and Sonnet 4.6
+are still served as previous-generation models. Opus 5 specifics live in
+`opus-5-calibration`. Query the Models API for live capabilities rather
 than hard-coding. MCP spec: stable revision 2025-11-25; a 2026-07-28
 release candidate (stateless core, Tasks, MCP Apps) is not yet final.
 
@@ -90,8 +92,11 @@ release candidate (stateless core, Tasks, MCP Apps) is not yet final.
 - LLM-as-judge evals with the same model family grading its own output,
   unanchored scales, or no human-spot-check calibration.
 - MCP servers that dump unpaginated result sets into context, log to
-  stdout on stdio transport (corrupts the protocol stream), or skip
-  Origin validation on local HTTP.
+  stdout on stdio transport (corrupts the protocol stream), skip
+  Origin validation on local HTTP, or block on long-running work instead
+  of returning a handle at once.
+- `str.format()` over a prompt that already contains document text —
+  braces in the content crash or corrupt it; insert content last.
 - Burning context on sub-task detail the main loop never needs — spawn a
   sub-agent and return only the conclusion.
 
@@ -118,8 +123,17 @@ release candidate (stateless core, Tasks, MCP Apps) is not yet final.
 
 ## Boundaries
 
+- **Model-version-specific calibration for Claude Opus 5** — the dials it
+  does not self-regulate, the legacy instructions that now backfire, effort
+  selection and the delegation gate → `opus-5-calibration`; this skill owns
+  the model-independent discipline beneath it.
 - **Azure OpenAI / AI Foundry platform engineering** → `azure-development`
   (ai-foundry); this skill owns the application/agent layer.
+- **Retrieval-augmented generation** — chunking, embeddings, vector stores,
+  hybrid retrieval and retrieval evals → `rag-development`; this skill owns
+  the model/agent layer above the retriever.
+- **Classic and deep ML you train yourself** — tabular/GBDT, PyTorch,
+  evaluation integrity, drift monitoring → `machine-learning-development`.
 - **Copilot Studio agents** → `copilot-studio-development`.
 - **Prompt-injection threat modelling, secrets, supply chain** →
   `secure-development` (this skill owns the in-harness mitigations).

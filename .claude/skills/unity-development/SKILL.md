@@ -41,8 +41,9 @@ long-lived advice. Pin the editor version per project
    checks only.
 3. **Cache component lookups**: `GetComponent` in `Update` is a
    per-frame search — fetch in `Awake`; never `GameObject.Find`/
-   `FindObjectOfType` in hot paths (and prefer explicit references
-   over Find entirely).
+   `FindFirstObjectByType`/`FindAnyObjectByType` in hot paths
+   (`FindObjectOfType` is deprecated since 2023.1) — and prefer
+   explicit references over Find entirely.
 4. **Lifecycle discipline**: `Awake` = self-setup, `OnEnable` =
    subscribe, `Start` = cross-object init (all Awakes done),
    `OnDisable` = unsubscribe (symmetry!), `OnDestroy` = teardown.
@@ -60,7 +61,7 @@ long-lived advice. Pin the editor version per project
 8. **Profile before optimising** (Profiler + Profile Analyzer +
    Memory Profiler on TARGET hardware) and mind GC: no per-frame
    allocations (string concat, LINQ, boxed closures in Update),
-   pool spawned objects (`ObjectPool<T>` is built in).
+   pool spawned objects (`ObjectPool` is built in).
 9. **New Input System** for new projects (action maps, rebinding,
    multi-device); legacy Input Manager only for maintenance
    (`references/input-ui.md`).
@@ -102,9 +103,11 @@ long-lived advice. Pin the editor version per project
 
 - Subscribing in `OnEnable` without unsubscribing in `OnDisable`
   (leaks + ghost callbacks on pooled objects).
-- Editing shared materials (`renderer.material` instantiates a copy
-  per access; `sharedMaterial` mutates the asset — know which you
-  want).
+- Editing shared materials (`renderer.material` instantiates a
+  per-renderer copy on first access — which you must `Destroy`
+  yourself; `sharedMaterial` mutates the asset for every user — know
+  which you want; `MaterialPropertyBlock` avoids both for per-object
+  tweaks).
 - Physics: moving static colliders, scaling rigidbodies per frame,
   raycasts without layer masks; `Time.deltaTime` in FixedUpdate
   (it's fixedDeltaTime there — fine, but mixing them up isn't).

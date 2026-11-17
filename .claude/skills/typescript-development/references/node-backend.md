@@ -10,15 +10,19 @@ process.on("SIGTERM", () => shutdown("SIGTERM"));
 process.on("SIGINT", () => shutdown("SIGINT"));
 process.on("unhandledRejection", (reason) => {
   console.error("Unhandled rejection:", reason);
-  shutdown("unhandledRejection");
+  shutdown("unhandledRejection", 1);   // a crash must exit non-zero
+});
+process.on("uncaughtException", (err) => {
+  console.error("Uncaught exception:", err);
+  shutdown("uncaughtException", 1);
 });
 
-function shutdown(signal: string) {
-  console.log(`Received ${signal}, shutting down...`);
+function shutdown(reason: string, exitCode = 0) {
+  console.log(`Received ${reason}, shutting down...`);
   server.close(() => {
-    db.destroy().then(() => process.exit(0));
+    db.destroy().finally(() => process.exit(exitCode));
   });
-  setTimeout(() => process.exit(1), 10_000);   // force-exit if close hangs
+  setTimeout(() => process.exit(1), 10_000).unref();   // force-exit if close hangs
 }
 ```
 
@@ -82,6 +86,15 @@ app.use((err: unknown, req: Request, res: Response, _next: NextFunction) => {
   res.status(500).json({ code: "INTERNAL", message: "An unexpected error occurred" });
 });
 ```
+
+## Child Processes on Windows
+
+`spawn(cmd, { shell: true })` on Windows starts `cmd.exe`, and
+`child.kill()` kills only that shell — the real process (a dev server, a
+preview server) survives and keeps its port. Kill the tree:
+`spawnSync("taskkill", ["/pid", String(child.pid), "/T", "/F"])`, or avoid
+`shell: true` and spawn the executable directly (resolve `.cmd` shims
+explicitly, and never pass untrusted arguments through a shell).
 
 ## Other Essentials
 

@@ -3,8 +3,8 @@
 How to structure Tailwind classes into a maintainable component system.
 Examples are React (the common case) — the *architecture* (variants,
 composition, semantic tokens) transfers to any framework. React
-engineering itself (hooks, state, typing) lives in the
-typescript-development skill.
+engineering itself (hooks, state, rendering) lives in the
+react-development skill; TS typing in typescript-development.
 
 Composition order: **base styles → variants → sizes → states → overrides**.
 
@@ -66,6 +66,20 @@ export function Button({ className, variant, size, ...props }: ButtonProps) {
 
 (React 19: `ref` is a normal prop — no `forwardRef`.)
 
+These variants use tokens beyond the base set in `tailwind.md`
+(`destructive-foreground`, `accent`, `accent-foreground`). In v4 a
+utility like `bg-accent` only exists if `--color-accent` is defined, so
+add them to `@theme` (and their `.dark` overrides) before using the
+component:
+
+```css
+@theme {
+  --color-destructive-foreground: oklch(98% 0.01 264);
+  --color-accent: oklch(96% 0.01 264);
+  --color-accent-foreground: oklch(14.5% 0.025 264);
+}
+```
+
 ## Compound Components
 
 Multi-part components export their parts; consumers compose:
@@ -103,7 +117,12 @@ export interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> 
   error?: string;
 }
 
-export function Input({ className, type, error, ...props }: InputProps) {
+export function Input({ className, type, error, id, ...props }: InputProps) {
+  // Always have an id: without one, `${id}-error` becomes "undefined-error"
+  // and every id-less Input on the page points at the same element.
+  const generatedId = React.useId();
+  const inputId = id ?? generatedId;
+  const errorId = `${inputId}-error`;
   return (
     <div className="relative">
       <input
@@ -113,12 +132,15 @@ export function Input({ className, type, error, ...props }: InputProps) {
           error && "border-destructive focus-visible:ring-destructive",
           className,
         )}
-        aria-invalid={!!error}
-        aria-describedby={error ? `${props.id}-error` : undefined}
         {...props}
+        id={inputId}
+        aria-invalid={!!error}
+        aria-describedby={
+          [props["aria-describedby"], error ? errorId : undefined].filter(Boolean).join(" ") || undefined
+        }
       />
       {error && (
-        <p id={`${props.id}-error`} className="mt-1 text-sm text-destructive" role="alert">
+        <p id={errorId} className="mt-1 text-sm text-destructive" role="alert">
           {error}
         </p>
       )}

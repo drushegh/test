@@ -66,9 +66,12 @@ const dbPath = process.env.ELECTRON_DB_PATH ?? path.join(getUserDataDir(), "app.
 // Spawning anything: give it an explicit cwd
 spawn(bin, args, { cwd: getSafeWorkingDir() });
 
-// Preload path: relative to compiled main, not source tree
+// Preload path: relative to compiled main, not source tree.
+// ESM main has no __dirname — use import.meta.dirname (Electron 30+ /
+// Node 20.11+) or path.dirname(fileURLToPath(import.meta.url)).
+// In a CJS main, __dirname works as-is.
 new BrowserWindow({
-  webPreferences: { preload: path.join(__dirname, "preload.cjs") },
+  webPreferences: { preload: path.join(import.meta.dirname, "preload.cjs") },
 });
 ```
 
@@ -94,19 +97,26 @@ const CANDIDATE_DIRS = [
 ];
 
 export function findBinary(name: string): string | null {
+  // Bare command names only — never a path or anything shell-meaningful.
+  if (!/^[A-Za-z0-9._-]+$/.test(name)) throw new Error(`Invalid binary name: ${name}`);
   // 1. explicit well-known locations
   for (const dir of CANDIDATE_DIRS) {
     const candidate = path.join(dir, process.platform === "win32" ? `${name}.cmd` : name);
     if (fs.existsSync(candidate)) return candidate;
   }
-  // 2. ask a login shell (gets the user's real PATH) — macOS/Linux
+  // 2. ask a login shell (gets the user's real PATH) — macOS/Linux only
+  if (process.platform === "win32") return null;
   try {
+    // name goes in as $1, never interpolated into the script
     const out = execFileSync(
       process.env.SHELL ?? "/bin/zsh",
-      ["-ilc", `command -v ${name}`],
+      ["-ilc", 'command -v -- "$1"', "findBinary", name],
       { encoding: "utf8", timeout: 3000 },
-    ).trim();
-    if (out) return out;
+    );
+    // rc files can print banners/noise: take the last line and only accept
+    // an absolute path to an existing file (not an alias/function body)
+    const last = out.trim().split("\n").pop()?.trim() ?? "";
+    if (path.isAbsolute(last) && fs.existsSync(last)) return last;
   } catch { /* not found */ }
   return null;
 }

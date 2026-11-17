@@ -25,8 +25,10 @@ public class CreateAccountNickname : IPlugin
 
         tracing.Trace("Stage {0}, Message {1}, Depth {2}", context.Stage, context.MessageName, context.Depth);
 
+        // C# 7.3 syntax on purpose: a net462 project defaults to C# 7.3, so
+        // the C# 9 `is not Entity entity` form doesn't compile here.
         if (!context.InputParameters.Contains(Target) ||
-            context.InputParameters[Target] is not Entity entity)
+            !(context.InputParameters[Target] is Entity entity))
         {
             return;
         }
@@ -94,6 +96,11 @@ sprawl, and keep each assembly's definition in a single solution.
 - `SharedVariables` — pass data between plugins in the same pipeline.
 - In PreOperation, mutate the Target directly — don't call Update on the
   record being saved.
+- **Whose rights?** `CreateOrganizationService(context.UserId)` runs as
+  the step's run-as user — the **calling user** by default, not elevated.
+  `CreateOrganizationService(null)` is the SYSTEM user. Derived writes the
+  user couldn't make themselves need the elevated service, and must be
+  tested as a non-admin persona (security-model.md).
 
 ## Transactions — the rule that bites
 
@@ -102,9 +109,13 @@ whole transaction**. The try/catch-and-continue pattern that works in
 client apps produces "ISV code reduced the open transaction count" /
 "no active transaction" errors here. If an `IOrganizationService` call
 fails, the only correct move is to surface
-`InvalidPluginExecutionException`. Related: **no
-`ExecuteMultipleRequest`/`ExecuteTransactionRequest`** and **no
-parallel threading** inside plug-ins — unsupported.
+`InvalidPluginExecutionException`. Related: **no batch request types**
+in synchronous plug-in steps — `ExecuteMultipleRequest`,
+`ExecuteTransactionRequest` and the bulk messages
+`CreateMultipleRequest`/`UpdateMultipleRequest`/`UpsertMultipleRequest`
+(Microsoft Learn: "Don't use batch request types in plug-ins and
+workflow activities"; issue individual requests instead) — and **no
+parallel threading** inside plug-ins (unsupported).
 
 ## External Calls
 

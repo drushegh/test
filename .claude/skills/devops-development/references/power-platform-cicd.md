@@ -14,8 +14,10 @@ pipeline wiring.
 - **GitHub**: `microsoft/powerplatform-actions` (same verbs as
   actions).
 - Both wrap **pac CLI** — anything the tasks miss, script with pac
-  directly (install via tool installer task / `actions/setup` +
-  `dotnet tool install`).
+  directly (install via the tool installer task /
+  `microsoft/powerplatform-actions/actions-install`, or
+  `actions/setup-dotnet` + `dotnet tool install --global
+  Microsoft.PowerApps.CLI.Tool`).
 - Auth: service principal per environment ("Application user" in
   Dataverse with security role); ADO Power Platform service connection
   or GitHub secrets/OIDC-fetched credentials. SPN needs the Dataverse

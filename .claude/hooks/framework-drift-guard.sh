@@ -19,6 +19,7 @@ HOOK_INPUT=$(cat 2>/dev/null || true)
 # --- Profile / opt-out gate (TASK-011) -------------------------------
 # Skip → emit the empty object (no additional context injected).
 _lib="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/hook-common.sh"
+# shellcheck source=/dev/null
 [ -f "$_lib" ] && . "$_lib"
 if command -v hook_enabled >/dev/null 2>&1 && ! hook_enabled drift-guard normal; then
   echo "{}"; exit 0
@@ -30,15 +31,12 @@ if ! command -v jq &>/dev/null; then
   exit 0
 fi
 
-# Framework-self mode: in the upstream framework repo only, state files
-# live at .claude/framework/self/ (flag is gitignored, created manually).
-# Consumers have no flag and operate on .claude/ state files as usual.
+# State files live at .claude/ (root). framework-self mode was retired in
+# TASK-054: the upstream repo now keeps its dirty dev board at root — and,
+# since TASK-089 retired the separate 02_solution/ clean-canonical copy, root
+# is also the framework's only in-repo tree — instead of redirecting to self/.
 STATE_ROOT="$REPO_ROOT/.claude"
 STATE_PREFIX=".claude/"
-if [ -f "$REPO_ROOT/.claude/framework-self.flag" ]; then
-  STATE_ROOT="$REPO_ROOT/.claude/framework/self"
-  STATE_PREFIX=".claude/framework/self/"
-fi
 
 STATE_DIR="$REPO_ROOT/.claude"
 DRIFT_STATE="$STATE_DIR/.drift-state"
@@ -83,6 +81,9 @@ LAST_REMINDER=$(jq -r '.last_reminder // 0' "$DRIFT_STATE" 2>/dev/null || echo "
 LAST_SUGGESTIONS_REMINDER=$(jq -r '.last_suggestions_reminder // 0' "$DRIFT_STATE" 2>/dev/null || echo "0")
 LAST_COMPACT_REMINDER=$(jq -r '.last_compact_reminder // 0' "$DRIFT_STATE" 2>/dev/null || echo "0")
 LAST_SESSION_ID=$(jq -r '.session_id // empty' "$DRIFT_STATE" 2>/dev/null || true)
+# P6 (TASK-140): board-write tracking for staleness-gated (not cadence) reminders.
+LAST_STATE_ACTIVITY=$(jq -r '.last_state_activity // 0' "$DRIFT_STATE" 2>/dev/null || echo "0")
+PREV_STATE_MTIME=$(jq -r '.state_mtime // 0' "$DRIFT_STATE" 2>/dev/null || echo "0")
 
 # Per-session counter reset. Without this, .drift-state accumulated for the
 # project's LIFETIME: "every 8 prompts" nudges measured across sessions and
@@ -94,8 +95,39 @@ if [ -n "$SESSION_ID" ] && [ "$SESSION_ID" != "$LAST_SESSION_ID" ]; then
   LAST_REMINDER=0
   LAST_SUGGESTIONS_REMINDER=0
   LAST_COMPACT_REMINDER=0
+  LAST_STATE_ACTIVITY=0
+  PREV_STATE_MTIME=0
 fi
 PROMPT_COUNT=$((PROMPT_COUNT + 1))
+
+# --- Board-write detection (P6, TASK-140) ----------------------------
+# last_state_activity = the prompt at which a state file was last WRITTEN.
+# Detected by an mtime advance on any state file (catches committed AND
+# uncommitted writes, unlike git-diff). The periodic check-in (Indicator 2)
+# and the suggestions nudge (Indicator 4) then fire on measured STALENESS
+# (N turns since a board write) instead of a fixed per-turn cadence — so
+# during active board work they stay SILENT (no wallpaper), and only nag
+# when the board has genuinely gone untouched. Tunable:
+# CLAUDE_DRIFT_BOARD_STALE_TURNS (default 8).
+_newest_state_mtime() {
+  local f m best=0
+  for f in TASKS.md STATUS.md DECISIONS.md claude-progress.txt GOTCHAS.md ECOSYSTEM.md; do
+    [ -f "$STATE_ROOT/$f" ] || continue
+    m=$(stat -c %Y "$STATE_ROOT/$f" 2>/dev/null || stat -f %m "$STATE_ROOT/$f" 2>/dev/null || echo 0)
+    case "$m" in ''|*[!0-9]*) m=0 ;; esac
+    [ "$m" -gt "$best" ] && best=$m
+  done
+  printf '%s' "$best"
+}
+case "$PREV_STATE_MTIME" in ''|*[!0-9]*) PREV_STATE_MTIME=0 ;; esac
+case "$LAST_STATE_ACTIVITY" in ''|*[!0-9]*) LAST_STATE_ACTIVITY=0 ;; esac
+CUR_STATE_MTIME=$(_newest_state_mtime)
+if [ "$CUR_STATE_MTIME" -gt "$PREV_STATE_MTIME" ]; then
+  LAST_STATE_ACTIVITY=$PROMPT_COUNT     # a state file was written since last turn
+fi
+BOARD_STALE_TURNS_CFG="${CLAUDE_DRIFT_BOARD_STALE_TURNS:-8}"; BOARD_STALE_TURNS_CFG="${BOARD_STALE_TURNS_CFG%$'\r'}"
+case "$BOARD_STALE_TURNS_CFG" in ''|*[!0-9]*) BOARD_STALE_TURNS_CFG=8 ;; esac
+BOARD_STALE=$((PROMPT_COUNT - LAST_STATE_ACTIVITY))
 
 # Check for drift indicators
 REMINDERS=""
@@ -110,7 +142,7 @@ _set_primary() { [ -z "$PRIMARY_TRIGGER" ] && PRIMARY_TRIGGER="$1"; }
 # `set -e` active (or in arithmetic context), the || branch was producing
 # "0\n0" for the variable, which broke the integer comparison below.
 PROJECT_CHANGES=$(git diff --name-only HEAD 2>/dev/null | grep -cE "$PROJECT_PATTERN")
-# State-file regex honours framework-self mode (flag → redirect prefix)
+# State-file regex (STATE_PREFIX is always .claude/; framework-self redirect retired)
 # AND per-file layouts (decisions/*.md, contracts/*.md). Either a
 # monolithic file or any file in the per-file dirs counts as state.
 STATE_REGEX="^${STATE_PREFIX}(TASKS|STATUS|DECISIONS|ECOSYSTEM)\.md|^${STATE_PREFIX}claude-progress\.txt|^${STATE_PREFIX}(decisions|contracts)/.*\.md"
@@ -121,9 +153,12 @@ if [ "$PROJECT_CHANGES" -gt 3 ] && [ "$STATE_CHANGES" -eq 0 ]; then
   _set_primary "stale-state"
 fi
 
-# Indicator 2: Many prompts since last reminder (every 8 prompts)
+# Indicator 2: the board has gone STALE — N turns since any state file was
+# written (P6: measured drift, not a fixed cadence). SINCE_REMINDER throttles
+# re-firing so it nags at most every N turns while stale, and stays SILENT
+# entirely during active board work (BOARD_STALE < N).
 SINCE_REMINDER=$((PROMPT_COUNT - LAST_REMINDER))
-if [ "$SINCE_REMINDER" -ge 8 ]; then
+if [ "$BOARD_STALE" -ge "$BOARD_STALE_TURNS_CFG" ] && [ "$SINCE_REMINDER" -ge "$BOARD_STALE_TURNS_CFG" ]; then
   REMINDERS="${REMINDERS}📋 Framework check-in: Are you following the framework? Update TASKS.md when task status changes. Review contracts before changing interfaces. Record significant decisions per your project's decision-logging convention.\n"
   DRIFT_DETECTED=true
   _set_primary "periodic-checkin"
@@ -137,17 +172,24 @@ if [ -f "$STATE_ROOT/TASKS.md" ]; then
   # count was >0 even on an empty board and this indicator never fired.
   IN_PROGRESS=$(awk '/^### In Progress/{f=1; next} /^### /{f=0} f && (/^#### / || /^[-*] /){c++} END{print c+0}' "$STATE_ROOT/TASKS.md" 2>/dev/null)
   IN_PROGRESS="${IN_PROGRESS:-0}"
-  if [ "$IN_PROGRESS" -eq 0 ] && [ "$PROMPT_COUNT" -gt 3 ]; then
+  # An entirely EMPTY board = a fresh project / pre-task setup (before /plan has
+  # created anything) — there's nothing to claim yet, so stay quiet. Only nag when
+  # tasks EXIST but none is In Progress.
+  TOTAL_TASKS=$(grep -cE '^#### \[(TASK|BUG)-' "$STATE_ROOT/TASKS.md" 2>/dev/null || true)
+  TOTAL_TASKS="${TOTAL_TASKS:-0}"
+  if [ "$IN_PROGRESS" -eq 0 ] && [ "$TOTAL_TASKS" -gt 0 ] && [ "$PROMPT_COUNT" -gt 3 ]; then
     REMINDERS="${REMINDERS}⚠ No task is marked 'In Progress' in TASKS.md. Claim a task before working on it.\n"
     DRIFT_DETECTED=true
     _set_primary "no-task-claimed"
   fi
 fi
 
-# Indicator 4: Periodic reminder about framework suggestions and GOTCHAS review
-# Fires every 15 prompts (less frequent than the general check-in).
+# Indicator 4: framework-suggestions / GOTCHAS-review nudge. Standing guidance
+# already lives in CLAUDE.framework.md (Framework Feedback), so this fires only
+# during a board LULL (P6: staleness-gated at ~2x the check-in threshold), never
+# as per-turn wallpaper during active work.
 SINCE_SUGGESTIONS=$((PROMPT_COUNT - LAST_SUGGESTIONS_REMINDER))
-if [ "$SINCE_SUGGESTIONS" -ge 15 ]; then
+if [ "$BOARD_STALE" -ge "$((BOARD_STALE_TURNS_CFG * 2))" ] && [ "$SINCE_SUGGESTIONS" -ge "$((BOARD_STALE_TURNS_CFG * 2))" ]; then
   REMINDERS="${REMINDERS}💡 Framework improvement check: If you encountered and fixed an issue this session that the framework itself could have prevented (missing guardrails, unclear instructions, structural gaps), log it in FRAMEWORK-SUGGESTIONS.md. Also review GOTCHAS.md — if any entry describes a broadly useful pattern (not project-specific) that would help future projects, promote it to a framework suggestion.\n"
   DRIFT_DETECTED=true
   SUGGESTIONS_REMINDED=true
@@ -177,6 +219,29 @@ if [ "$COMPACT_ENABLED" = true ] && [ "$SINCE_COMPACT" -ge "$COMPACT_TURNS" ]; t
   _set_primary "compaction-nudge"
 fi
 
+# Indicator 6: unresolved dependency-verification advisory (verify-deps.sh).
+# verify-deps.sh writes .claude/.dep-verification-issues.md when a manifest
+# edit adds a package it can't confirm on the registry — the anti-hallucination
+# MISSING-package signal — but until now NOTHING surfaced it: the file "died
+# unread" unless someone happened to open it. Inject a one-line pointer here so
+# it reaches the model on the NEXT turn (and every turn while it persists),
+# until the agent verifies the packages and deletes the file. Surfaced whenever
+# the file exists — this is a real unresolved issue, not a throttled nudge.
+DEP_ISSUES="$STATE_ROOT/.dep-verification-issues.md"
+if [ -f "$DEP_ISSUES" ]; then
+  # grep -c prints "0" on no match (no `|| echo` needed — same idiom as the
+  # indicators above); strip any stray CR from a Windows-authored file.
+  DEP_MISSING=$(grep -c 'MISSING' "$DEP_ISSUES" 2>/dev/null)
+  DEP_MISSING="${DEP_MISSING//[^0-9]/}"; DEP_MISSING="${DEP_MISSING:-0}"
+  if [ "$DEP_MISSING" -gt 0 ]; then
+    REMINDERS="${REMINDERS}🚨 Dependency check: ${STATE_PREFIX}.dep-verification-issues.md flags ${DEP_MISSING} package(s) NOT found on their registry (likely hallucinated). Verify each exists before commit, then delete that file.\n"
+  else
+    REMINDERS="${REMINDERS}📦 Dependency check: ${STATE_PREFIX}.dep-verification-issues.md has unverified dependency advisories from a recent manifest edit. Review and resolve them, then delete that file.\n"
+  fi
+  DRIFT_DETECTED=true
+  _set_primary "dep-verification"
+fi
+
 # Update drift state
 NEW_LAST_REMINDER=$LAST_REMINDER
 NEW_LAST_SUGGESTIONS=$LAST_SUGGESTIONS_REMINDER
@@ -190,16 +255,23 @@ fi
 if [ "${COMPACT_REMINDED:-false}" = true ]; then
   NEW_LAST_COMPACT=$PROMPT_COUNT
 fi
+_dtmp="${DRIFT_STATE}.tmp"
+command -v unique_tmp >/dev/null 2>&1 && _dtmp=$(unique_tmp "$DRIFT_STATE")
 jq -n --argjson count "$PROMPT_COUNT" \
       --argjson reminder "$NEW_LAST_REMINDER" \
       --argjson suggestions "$NEW_LAST_SUGGESTIONS" \
       --argjson compact "$NEW_LAST_COMPACT" \
+      --argjson activity "${LAST_STATE_ACTIVITY:-0}" \
+      --argjson smtime "${CUR_STATE_MTIME:-0}" \
       --arg session "${SESSION_ID:-$LAST_SESSION_ID}" \
-  '{prompt_count: $count, last_reminder: $reminder, last_suggestions_reminder: $suggestions, last_compact_reminder: $compact, session_id: $session}' > "${DRIFT_STATE}.tmp" \
-  && mv "${DRIFT_STATE}.tmp" "$DRIFT_STATE" 2>/dev/null || rm -f "${DRIFT_STATE}.tmp" 2>/dev/null
+  '{prompt_count: $count, last_reminder: $reminder, last_suggestions_reminder: $suggestions, last_compact_reminder: $compact, last_state_activity: $activity, state_mtime: $smtime, session_id: $session}' > "$_dtmp" \
+  && mv -f "$_dtmp" "$DRIFT_STATE" 2>/dev/null || rm -f "$_dtmp" 2>/dev/null
 # tmp+mv (DA-H6): a direct truncate-write left partial JSON behind on an
 # interrupted write or concurrent UserPromptSubmit fire — the next read
-# then failed and silently reset every counter.
+# then failed and silently reset every counter. A UNIQUE tmp path per
+# write (Audtor 2026-07-02 minor), not a fixed "${DRIFT_STATE}.tmp" name:
+# two concurrent UserPromptSubmit fires used to race on the SAME temp
+# file and could clobber each other's write (lost update).
 
 # --- Telemetry: emit one event per UserPromptSubmit ---
 # Schema-v2 via hook-common.sh (contract:telemetry-schema). Lib absent →

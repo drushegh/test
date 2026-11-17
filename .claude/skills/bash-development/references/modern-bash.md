@@ -12,10 +12,11 @@ target, and beyond 4.x for older enterprise Linux. Check at runtime:
 
 | Since | Feature | Use |
 |---|---|---|
+| 3.1 | `printf -v var` | format into a variable, no subshell (works on macOS's 3.2) |
 | 4.0 | associative arrays `declare -A` | lookups, config maps, dispatch tables |
 | 4.0 | `mapfile`/`readarray` | command output → array safely |
 | 4.0 | `${var,,}` `${var^^}` case conversion | replaces `tr` calls |
-| 4.2 | `printf -v var` | format into a variable, no subshell |
+| 4.0 | `read -e -i text` | readline prompt with pre-filled editable default |
 | 4.3 | namerefs `declare -n` | "return" values from functions cleanly |
 | 4.4 | `${var@Q}` quoting expansion | safe re-quoting for logs/eval-free codegen |
 | 5.0 | `$EPOCHSECONDS` / `$EPOCHREALTIME` | timestamps without `date` forks |
@@ -47,11 +48,12 @@ ${ cmd; }            # captures output like $(cmd), runs in current shell
 ${| cmd; }           # cmd sets REPLY; expansion is REPLY's value
 
 # GLOBSORT — control glob ordering without ls|sort pipelines
-GLOBSORT=mtime; files=(*.log)        # newest-first by mtime
-GLOBSORT=-size                        # reverse size order
+GLOBSORT=-mtime; files=(*.log)       # newest-first (bare `mtime` = oldest-first)
+GLOBSORT=-size                        # largest first (descending size)
 
-# read with readline completion in interactive scripts
-read -e -p "path: " -i "$PWD/" target
+# read -E: readline WITH bash's default + programmable completion
+# (`read -e -i` readline + pre-fill works since 4.0; `-E` adds completion)
+read -E -p "path: " -i "$PWD/" target
 ```
 
 Treat 5.3 features as an optimisation layer: scripts should degrade or

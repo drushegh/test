@@ -63,5 +63,5 @@ a blanket percentage that rewards trivial tests.
 
 Performance, scalability, resilience and security expectations are
 requirements: express them as SLIs/SLOs and **test and gate** them
-(`load-performance.md`), especially where a tender specifies response times,
+(`load-performance.md`), especially where a contract specifies response times,
 throughput or availability.

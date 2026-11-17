@@ -26,8 +26,8 @@ overseeing the risk measures.
   (RMMs) and the Cyber Fundamentals framework (24 June 2025)** —
   the practical Irish compliance baseline to design against now,
   regardless of the Bill's timing.
-- Public-sector clients and their suppliers are in scope ranges —
-  expect NIS2-derived requirements in Irish public ICT tenders even
+- Regulated entities and their suppliers are in scope ranges —
+  expect NIS2-derived requirements in regulated ICT environments even
   before/regardless of transposition.
 
 ## Developer-relevant obligations (Article 21 risk measures)
@@ -59,10 +59,10 @@ Essential entities: up to €10m or 2% global turnover; important:
 up to €7m or 1.4%. Management liability attaches — which is why
 boards now fund the items above.
 
-## Tender framing (consultancy use)
+## Compliance framing
 
-Map proposal security sections to Article 21 measures explicitly;
-reference NCSC-IE RMMs/Cyber Fundamentals alignment for Irish buyers;
-evidence over adjectives (named processes, tools, SLAs, test
-cadences). Flag scope determinations (essential vs important vs out
-of scope) as the client's legal call.
+Map security documentation to Article 21 measures explicitly;
+reference NCSC-IE RMMs/Cyber Fundamentals alignment for relevant
+regulated entities; evidence over adjectives (named processes, tools,
+SLAs, test cadences). Flag scope determinations (essential vs
+important vs out of scope) as the client's legal call.

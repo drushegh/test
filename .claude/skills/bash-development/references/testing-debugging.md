@@ -62,6 +62,17 @@ hostile input (spaces, globs, leading dashes in filenames), dry-run
 inertness, exit codes. CI: `bats tests/` after `shellcheck` and
 `bash -n` in the lint stage.
 
+**`$( )` (and bats `$output`) strips trailing newlines**, so it cannot
+verify a newline-termination contract: `$(printf 'x')` and
+`$(printf 'x\n\n')` capture the same string. Capture to a file and assert
+bytes instead:
+
+```bash
+my_script.sh > "$TEST_TMP/out"
+[ "$(tail -c1 "$TEST_TMP/out" | od -An -tx1 | tr -d ' ')" = "0a" ]    # ends in \n
+[ "$(tail -c2 "$TEST_TMP/out" | od -An -tx1 | tr -d ' ')" != "0a0a" ] # exactly one
+```
+
 ## Static Verification
 
 ```bash

@@ -1,4 +1,9 @@
-Follow the Cold Start sequence (steps 0-9 from CLAUDE.framework.md — the canonical list lives there; CLAUDE.md merely @imports it).
+Follow the Cold Start sequence (canonical list in CLAUDE.framework.md — CLAUDE.md merely @imports it).
+
+> **Step 0 — v2 self-route (read this first):** if `.claude/.framework-version` contains a
+> `FRAMEWORK_LINE=v2` line, this project runs the CCMAF v2 plugins — invoke the
+> `ccmaf:analyse` skill (Skill tool) and follow IT instead of this file; stop reading
+> here. This bare command is the v1-line copy, kept as authored source.
 
 Then, acting as the project architect:
 
@@ -9,6 +14,16 @@ Then, acting as the project architect:
 3. For EXISTING projects with code already in place:
    - Use subagents to explore the codebase and understand what exists
    - Identify relevant existing modules, endpoints, models, and patterns
+
+   Every reading/exploration subagent brief (steps 2 and 3) includes:
+   - **Census rule:** "here is the file list I expect you to cover —
+     verify it against the folder yourself and report anything the list
+     missed" (orchestrator-supplied lists go stale; the agent at the
+     folder is the one who can see what's actually there)
+   - **Capped, typed return:** "RETURN: ~N words covering [A, B, C].
+     Your return is data for this session, not a user-facing message."
+   - **Markers:** [GAP]/[ASSUMED]/[INFERRED] per behavioral-principles.md
+     §4 for anything not established from the documents themselves
 
 4. **Structured Interview** — Use the AskUserQuestion tool to fill gaps.
    Do NOT free-form interview. Structure questions into focused batches

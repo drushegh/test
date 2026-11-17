@@ -55,9 +55,9 @@ the loader paths above are not optional decoration.
   `renderer.compileAsync(scene, camera)` to pre-warm shaders.
 - Lazy-load secondary content after first paint; prioritise the hero
   asset.
-- HDR environments: `RGBELoader` + `PMREMGenerator` (or drei
-  `<Environment>` presets) — .hdr files are big; use compressed
-  alternatives where possible.
+- HDR environments: `HDRLoader` (r180+; formerly `RGBELoader`, now
+  deprecated) + `PMREMGenerator` (or drei `<Environment>` presets) — .hdr files
+  are big; use compressed alternatives where possible.
 
 ## Asset hygiene in CI
 

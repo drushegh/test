@@ -86,7 +86,7 @@ gdUnit4Net / GoDotTest for engine-touching tests in CI.
 
 ## When to recommend C# (consultancy frame)
 
-.NET-house teams (like OpenSky), reuse of existing C# domain code,
+.NET-house teams, reuse of existing C# domain code,
 heavy simulation logic, typed-ecosystem preference. Counterweights:
 GDScript's iteration speed, docs/community defaults, web export
 maturity. General C# language guidance → `dotnet-development`;

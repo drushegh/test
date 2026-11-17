@@ -14,7 +14,12 @@
 ## North-south: Ingress and Gateway API
 
 - **Ingress** — HTTP(S) host/path routing + TLS termination via an ingress
-  controller (NGINX, or AKS **application routing add-on**). Mature, ubiquitous.
+  controller. The API is stable and still widely deployed, but the
+  community **ingress-nginx** controller is retired (upstream maintenance
+  ended March 2026 — no further releases or security fixes); AKS's managed
+  NGINX in the app routing add-on gets critical patches only through
+  November 2026. Existing Ingress estates: plan a migration, or move to a
+  maintained controller (NGINX Inc's, Traefik, HAProxy, Contour, ...).
 - **Gateway API** — the successor: role-oriented (`GatewayClass`/`Gateway`/
   `HTTPRoute`), richer traffic control, portable. **Prefer it for new work**;
   AKS supports it via the app routing add-on and Istio.

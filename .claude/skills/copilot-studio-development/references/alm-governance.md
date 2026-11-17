@@ -61,8 +61,7 @@ Enforcement applies to **all** tenants and agents since early 2025
 ## Audit, compliance, encryption
 
 - Maker activity → Microsoft Purview audit logs; agent activity can be
-  monitored/alerted via Microsoft Sentinel (→ `sentinel-development` when
-  built).
+  monitored/alerted via Microsoft Sentinel (→ `sentinel-development`).
 - Sensitivity labels surface in chat for SharePoint-sourced knowledge
   (highest label shown).
 - Customer-managed keys (CMK) available per environment; Customer Lockbox

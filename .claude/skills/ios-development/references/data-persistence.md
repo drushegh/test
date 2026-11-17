@@ -41,6 +41,13 @@ struct TopicList: View {
 }
 ```
 
+**CloudKit mirroring constraints** (the "cross-device sync" row above):
+a SwiftData/Core Data store synced via CloudKit does **not** support
+`@Attribute(.unique)`, needs every property optional or defaulted, and
+every relationship optional (no `.deny` delete rule). Drop `.unique` from
+the model above (dedupe on `id` in code) if the container will sync —
+decide before shipping, as retrofitting is a migration.
+
 Schema changes need a versioned migration plan (`VersionedSchema` +
 `SchemaMigrationPlan`) once shipped — additive changes are lightweight,
 renames/transforms are explicit stages.

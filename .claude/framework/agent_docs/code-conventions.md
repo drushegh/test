@@ -35,6 +35,19 @@ project-specific overrides here.
 
 <!-- Document the project's actual choice. -->
 
+## State Files Are Machine-Read
+
+The `.claude/` state files are a parsed interface, not just prose — the framework's
+own scripts and downstream board tooling read (and write) them. Preserve the grammar
+exactly (`contract:state-file-grammar`, enforced by the `state-structure` doctor check):
+
+- TASKS entries are **bracketed level-4** headings: `#### [TASK-N] Title` / `#### [BUG-N] Title`.
+  A bare (`#### TASK-N`) or level-3 (`### [TASK-N]`) entry is silently dropped. The
+  `TASK`/`BUG` prefix is authoritative for lane routing.
+- Feature lifecycle includes a human **Verify** stage: `Ready for Test → Verify → Done`.
+- Keep `**Field:**` markers (e.g. `**Confidence:**`) and the `·` (U+00B7) middot
+  separators in DECISIONS/GOTCHAS intact — a hyphen there silently drops the field.
+
 ## Error Handling
 
 - Validate at boundaries (user input, external API responses, deserialised config); trust internal types
@@ -83,4 +96,12 @@ invent parallel styles. Examples:
 - No magic strings — use enums or named constants
 - **No preemptive abstractions** — only create shared helpers when there is clear current duplication or an obvious short-term reuse path. Three similar lines is better than a premature abstraction.
 - No commented-out code in commits (use git history instead)
-- No TODO comments without an owner and a ticket reference
+- **Deferred work gets a single inline marker at the exact site**, written as
+  deliberate intent and always carrying an owner and a task ID:
+  `TODO(TASK-NN): <what is simplified or deferred> — owner`. When the deferral
+  has a known limit, the marker names BOTH the current ceiling AND the upgrade
+  trigger, e.g. `// TODO(TASK-NN): global lock; switch to per-account locks if
+  throughput becomes a bottleneck`. Use `FIXME(TASK-NN)` for a known-wrong
+  stopgap. A marker without a task ID is not allowed — that's the one that
+  silently rots from "later" into "never" (harvested by `/housekeeping`'s
+  TODO census).

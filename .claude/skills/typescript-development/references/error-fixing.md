@@ -7,7 +7,7 @@ fixing a root type definition often resolves dozens of downstream errors.
 ## Phase 1: Discovery
 
 1. Detect the package manager (`package-lock.json`, `pnpm-lock.yaml`,
-   `yarn.lock`, `bun.lockb`) and the typecheck command (`tsc --noEmit`, or
+   `yarn.lock`, `bun.lock` / legacy `bun.lockb`) and the typecheck command (`tsc --noEmit`, or
    `tsgo --noEmit` where adopted).
 2. Run the full typecheck and capture output to a log; don't fix anything
    yet.

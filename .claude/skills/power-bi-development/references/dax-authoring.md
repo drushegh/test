@@ -19,9 +19,12 @@ RETURN CALCULATE(x, SAMEPERIODLASTYEAR('Date'[Date]))   -- WRONG
 CALCULATE([Sales Amount], SAMEPERIODLASTYEAR('Date'[Date]))
 ```
 
-- **Branch-selection bug**: two heavy `VAR`s before an `IF` both
-  evaluate regardless of the branch taken — declare the `VAR` *inside*
-  the branch expression for per-branch evaluation.
+- **Branch evaluation**: because `VAR`s are lazy, a heavy `VAR`
+  referenced only in one `IF` branch is normally computed only when that
+  branch is taken — but the engine may still choose an eager plan that
+  computes both branches (common inside iterators). Don't assume either
+  way: check the query plan / server timings in DAX Studio, and move the
+  `VAR` inside the branch expression if both are being computed.
 - A variable shadowing a column name silently wins — prefix variables
   with `_`. Variables are immutable; "running total in a loop" thinking
   must restructure as an iterator.
@@ -71,8 +74,13 @@ columns and don't materialise on DirectQuery/Direct Lake.
 - One **marked date table**, contiguous dates, no auto date/time tables
   in production models.
 - Classic TI functions (`DATESYTD`, `SAMEPERIODLASTYEAR`) need the
-  marked date table; week-based and 4-4-5 calendars need hand-built
-  calendar-arithmetic patterns instead.
+  marked date table and assume a Gregorian/fiscal-year calendar. For
+  week-based and retail (4-4-5, 4-5-4) calendars use **calendar-based
+  time intelligence** (Enhanced DAX Time Intelligence, introduced as a
+  preview Sept 2025 — check its current status): define a calendar on
+  the date table and pass it to TI functions (`TOTALYTD(..., 'Calendar')`,
+  week functions such as `TOTALWTD`). Hand-built calendar-arithmetic
+  patterns remain the fallback where that feature isn't available.
 - Wrap TI measures so blanks beyond the data range don't project phantom
   periods: `IF(NOT ISBLANK([Sales]), [Sales PY])` style guards.
 

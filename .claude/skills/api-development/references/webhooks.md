@@ -38,12 +38,15 @@ Webhook-Signature: v1,5h3f...base64hmac
 Content-Type: application/json
 ```
 
-- Sign with an **HMAC** (e.g. SHA-256) over the timestamp + raw body using a
-  per-subscription secret; the receiver recomputes and compares (constant-time).
+- Sign with an **HMAC-SHA256** using a per-subscription secret; the receiver
+  recomputes and compares (constant-time). Under Standard Webhooks the signed
+  content is `{webhook-id}.{webhook-timestamp}.{raw body}` (id, timestamp and
+  the exact raw bytes joined by `.`), and `Webhook-Signature` carries
+  space-separated `v1,<base64>` entries so secrets can be rotated.
 - Include a **timestamp** in the signed material and reject old ones to stop
   replay; require HTTPS endpoints.
-- This aligns with the Standard Webhooks convention; document your exact scheme
-  so receivers can verify.
+- That is the Standard Webhooks convention (standardwebhooks.com); if you deviate
+  from it, document your exact scheme so receivers can verify.
 
 ## Reliability — retries and idempotency
 

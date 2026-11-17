@@ -30,9 +30,13 @@ unconditionally and Moderate with "impactful if this is a hot path".
 
 ## Strings and Memory
 
-- 🟡 `Equals`/`StartsWith`/`EndsWith`/`Contains`/`IndexOf` without
-  `StringComparison` — culture-sensitive by default: both a correctness
-  and a performance issue. Use `Ordinal`/`OrdinalIgnoreCase`.
+- 🟡 `StartsWith(string)`/`EndsWith(string)`/`IndexOf(string)`/
+  `LastIndexOf(string)`/`Compare`/`CompareTo` without `StringComparison`
+  — culture-sensitive by default: both a correctness and a performance
+  issue. Pass `Ordinal`/`OrdinalIgnoreCase` explicitly. (`Equals`,
+  `==`, `Contains(string)` and the `char` overloads are already ordinal —
+  an explicit `StringComparison` there is for intent/case-insensitivity,
+  not a culture fix.)
 - 🟡 `.ToLower()`/`.ToUpper()` for comparison — allocates; use
   `string.Equals(a, b, StringComparison.OrdinalIgnoreCase)`.
 - 🟡 `+=` concatenation in loops — O(n²); use `StringBuilder` or

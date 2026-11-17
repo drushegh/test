@@ -1,5 +1,16 @@
 # Framework Manifest
 #
+# FRAMEWORK-RELEASE-LINE: bridge
+#   ^ v2 migration ladder marker (TASK-166). "bridge" = v2.0: every retired
+#   path is still listed below (the old updater deletes nothing) while the
+#   v2 pieces (migrate-v2.sh, retired-paths.txt, the tombstone-aware
+#   updater) ride in via the update/ dir-mirror. The v2.1 "drop" release
+#   flips this to `drop` AND removes the retired ENTRIES — but MUST keep
+#   the retired FILES in the repo (see retired-paths.txt's v2.1 authoring
+#   rule: a pre-bridge updater jumping straight to v2.1 then mirrors
+#   instead of pruning). The v2 updater refuses to apply a drop release to
+#   any project without BOTH v2 markers (tombstone + FRAMEWORK_LINE=v2).
+#
 # Paths listed here are framework-owned — they're overwritten on every
 # update. Paths NOT listed are project-owned and never touched.
 #
@@ -26,11 +37,15 @@
 # --- Framework-owned directories (dir mirror) ------------------------
 .claude/agents/framework/
 .claude/agents/council/
+.claude/framework/advisors/
 .claude/framework/agent_docs/
 .claude/framework/audit/
+.claude/framework/boot/
 .claude/framework/doctor/
-.claude/framework/fleet/
+.claude/framework/fable/
+.claude/framework/housekeeping/
 .claude/framework/insights/
+.claude/framework/telemetry/
 .claude/framework/tests/
 .claude/framework/update/
 
@@ -40,12 +55,24 @@
 # those and leave project commands (healthcheck.md, project/brand.md,
 # etc.) untouched on update.
 .claude/commands/analyse.md
+.claude/commands/board-heal.md
+.claude/commands/bug.md
 .claude/commands/build.md
 .claude/commands/council.md
-.claude/commands/fleet.md
+.claude/commands/consult.md
+.claude/commands/crossbench.md
+.claude/commands/fable.md
+.claude/commands/sol.md
+.claude/commands/terra.md
+.claude/commands/luna.md
+.claude/commands/image.md
+.claude/commands/mode.md
 .claude/commands/healthcheck.md
 .claude/commands/housekeeping.md
 .claude/commands/plan.md
+.claude/commands/post-compact.md
+.claude/commands/pre-compact.md
+.claude/commands/reconcile.md
 .claude/commands/review.md
 .claude/commands/security.md
 .claude/commands/test.md
@@ -56,10 +83,18 @@
 .claude/hooks/auto-format.sh
 .claude/hooks/auto-lint.sh
 .claude/hooks/block-dangerous-commands.py
+.claude/hooks/checkpoint-watermark.sh
+.claude/hooks/console-autostart.sh
+.claude/hooks/console-heartbeat.sh
 .claude/hooks/enforce-state-update.sh
 .claude/hooks/filter-test-output.sh
 .claude/hooks/framework-drift-guard.sh
+.claude/hooks/guard-interpreter-check.sh
 .claude/hooks/post-edit-dispatch.sh
+.claude/hooks/postcompact-archive.sh
+.claude/hooks/precompact-snapshot.sh
+.claude/hooks/session-reanchor.sh
+.claude/hooks/session-start-marker.sh
 .claude/hooks/statusline.sh
 .claude/hooks/verify-deps.sh
 # Sourced helper library (not a registerable hook — included via `source`).
@@ -68,9 +103,22 @@
 # --- Framework-owned top-level files ---------------------------------
 .claude/framework/init.sh
 .claude/framework/healthcheck.conf.template
-.claude/framework/update/migrate-layout.sh
+# NOTE: do NOT list a file whose parent directory is a dir-mirror entry
+# above (e.g. migrate-layout.sh lives under the .claude/framework/update/
+# mirror, which already ships it). A file entry nested inside a mirrored
+# dir breaks the two-phase swap — the dir's `mv` moves the staged subtree
+# into place first, leaving the nested file entry's `mv` with no staged
+# source ("cannot stat" → half-applied tree). See BUG-003.
 .claude/framework/docs/RETRO-AUDIT.md
 .claude/framework/docs/ADOPTED-FEEDBACK.md
 CLAUDE.framework.md
 .gitattributes
+tools/console.sh
+tools/console.mjs
+docs/README.md
+docs/inspiration/.gitkeep
+docs/research/.gitkeep
+docs/images/.gitkeep
+docs/diagrams/.gitkeep
+.claude/framework/docs/specs/.gitkeep
 .claude/claude-code-dev-framework.md

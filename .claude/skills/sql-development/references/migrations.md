@@ -71,9 +71,10 @@ SQL Server / Azure SQL:
 
 - Backfills are migrations too: batched, resumable (track a high-water
   mark), throttled, and verified by row-count/checksum comparison —
-  `sql-server-table-reconciliation`-style checks, or PG
-  `SELECT count(*), sum(hashtext(t::text)) FROM t` per shard, before
-  cutting over.
+  T-SQL `SELECT COUNT_BIG(*), CHECKSUM_AGG(BINARY_CHECKSUM(*)) FROM t`
+  per key range, or PG `SELECT count(*), sum(hashtext(t::text)) FROM t`
+  per shard — before cutting over (checksums can collide: treat a match
+  as evidence, a mismatch as proof).
 - Large one-off loads: disable/queue nonessential indexes and rebuild
   after; PG: `COPY` not row inserts, then `ANALYZE`; T-SQL: bulk-load via
   blob storage external data source on Azure SQL.
@@ -103,7 +104,7 @@ Two rules govern all of them:
 
 Data migrations (backfills) belong in their own step, not bundled into a schema
 migration — keep DDL and DML separable so each can be batched, retried and
-reviewed independently (see Data motion below).
+reviewed independently (see Data motion above).
 
 ## Drift and environments
 

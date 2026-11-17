@@ -95,7 +95,8 @@ frontend dev server boot? `devUrl` port matches? toolchains present
 blocking — open DevTools and read the console.
 
 **Command not found / returns undefined**: `#[tauri::command]` present →
-in `generate_handler![]` → names match (JS camelCase ↔ Rust snake_case) →
+in `generate_handler![]` → `invoke()` uses the exact Rust fn name
+(`get_user`, not `getUser`; only *argument* keys are camelCased) →
 command actually returns a value.
 
 **Permission denied**: capability targets the right window label →

@@ -14,25 +14,25 @@ team standard via `-CustomRulePath`.
 ## Pester 5 (the test framework)
 
 ```powershell
-BeforeAll { . $PSScriptRoot/../Public/Get-TenderStatus.ps1 }
+BeforeAll { . $PSScriptRoot/../Public/Get-OrderStatus.ps1 }
 
-Describe 'Get-TenderStatus' {
-    Context 'when the tender exists' {
+Describe 'Get-OrderStatus' {
+    Context 'when the order exists' {
         BeforeAll {
             Mock Invoke-RestMethod { @{ status = 'Open' } }
         }
         It 'returns the status object' {
-            (Get-TenderStatus -Id 42).status | Should -Be 'Open'
+            (Get-OrderStatus -Id 42).status | Should -Be 'Open'
         }
         It 'calls the API once' {
-            Get-TenderStatus -Id 42
+            Get-OrderStatus -Id 42
             Should -Invoke Invoke-RestMethod -Times 1 -Exactly
         }
     }
     Context 'when the API fails' {
         BeforeAll { Mock Invoke-RestMethod { throw 'boom' } }
         It 'throws a useful error' {
-            { Get-TenderStatus -Id 42 } | Should -Throw '*boom*'
+            { Get-OrderStatus -Id 42 } | Should -Throw '*boom*'
         }
     }
 }

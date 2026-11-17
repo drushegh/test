@@ -19,7 +19,11 @@ description: >-
 Consolidated Azure engineering for agents, grounded in Microsoft's
 official skills repo (microsoft/skills azure-skills plugin) and MS
 Learn. Azure DevOps/GitHub pipeline construction belongs to
-devops-development; Fabric capacity/data topics to fabric-development.
+devops-development; Fabric capacity/data topics to fabric-development;
+provider-independent Terraform/OpenTofu discipline (module design, remote
+state, the plan-as-gate loop, drift) to terraform-development — this skill
+owns the Azure specifics (azurerm/azapi, the Bicep-vs-Terraform decision,
+landing zones).
 
 ## Plan → Validate → Deploy (never skip the middle)
 
@@ -56,8 +60,7 @@ session+target, don't re-ask per operation.
 ## Destructive-Action Rules
 
 Never delete resource groups, projects, or workspace directories on a
-user's behalf without explicit per-action confirmation. `azd init -t
-<template>` is for NEW projects only — running it in an existing
+user's behalf without explicit per-action confirmation. `azd init` with a template is for NEW projects only — running it in an existing
 workspace overwrites; plain `azd init` is the existing-workspace form.
 
 ## Cost Is a Design Input
@@ -80,7 +83,7 @@ public IPs, and forgotten previews are the classic waste — sweep them.
   quota/capacity check **before** model deployment, evals before
   production.
 - Region availability and quotas vary — check both before promising a
-  service/SKU in a design or tender response.
+  service/SKU in a design or proposal.
 
 ## References
 
@@ -89,7 +92,7 @@ public IPs, and forgotten previews are the classic waste — sweep them.
 | references/infrastructure-iac.md | Bicep/Terraform, azd, deployment workflow |
 | references/compute-services.md | Service selection, App Service, Container Apps, Functions, AKS |
 | references/logic-apps.md | Logic Apps Standard vs Consumption, stateful/stateless, connectors, Sentinel playbooks |
-| references/identity-security.md | Entra ID, managed identity, RBAC, Key Vault, networking |
+| references/identity-security.md | Entra ID, managed identity, token expiry/401 re-mint, RBAC, Key Vault, networking |
 | references/azure-ml.md | Azure Machine Learning: workspace, compute, MLflow, online/batch endpoints, MLOps |
 | references/data-messaging.md | Storage, SQL/Cosmos, Service Bus/Event Grid/Event Hubs |
 | references/ai-foundry.md | Azure AI Foundry: projects, models, agents, evals |

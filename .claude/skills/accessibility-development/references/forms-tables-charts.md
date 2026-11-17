@@ -28,6 +28,18 @@
 - Required fields: native `required` plus visible indication that
   isn't colour-only; mark optional rather than required when most
   fields are required.
+- **Custom inline errors need `novalidate` on the form.** With native
+  `required` and no `novalidate`, a real browser blocks submit with its
+  own validation bubble, so your custom inline error (and error summary)
+  never renders. jsdom does not enforce constraint validation, so unit
+  tests pass. Either use native validation end to end, or set
+  `novalidate` on the `<form>` and keep `required`/`aria-required` for
+  semantics. Verify the error path in a real browser.
+- **Keep accessible names stable through async states.** Appending
+  transient text to a button's name ("Save — saving…") makes
+  `getByRole('button', { name })` a moving target and re-announces the
+  control. Signal in-flight state with `disabled` or `aria-busy` plus a
+  separate status message, not by rewriting the name.
 - Never auto-submit on selection change (3.2.2) and never move focus
   unexpectedly while typing.
 

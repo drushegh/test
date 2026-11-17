@@ -37,6 +37,7 @@ preferences (backing `MutableStateFlow`). Shared fixture data lives in a
 ## ViewModel Tests
 
 ```kotlin
+@RunWith(RobolectricTestRunner::class)            // toRoute() decodes via android.os.Bundle (Navigation 2.8+)
 class TopicViewModelTest {
 
     @get:Rule
@@ -48,7 +49,9 @@ class TopicViewModelTest {
     @Before
     fun setup() {
         viewModel = TopicViewModel(
-            savedStateHandle = SavedStateHandle(mapOf("topicId" to testTopic.id)),
+            // navigation-testing helper: builds the handle from the typed route, so the
+            // keys always match what savedStateHandle.toRoute<TopicRoute>() reads ("id")
+            savedStateHandle = SavedStateHandle(route = TopicRoute(id = testTopic.id)),
             topicsRepository = topicsRepository,
         )
     }
@@ -64,6 +67,13 @@ class TopicViewModelTest {
     }
 }
 ```
+
+A hand-built `SavedStateHandle(mapOf(...))` must use the route's property
+names as keys (`"id"` for `TopicRoute(val id: String)`) — a mismatched key
+fails only at runtime. To keep ViewModel tests on the plain JVM, the
+alternative is to pass the decoded argument in directly (assisted
+injection of `topicId`, as current NowInAndroid does) instead of the
+`SavedStateHandle`.
 
 ```kotlin
 // core:testing — the standard main-dispatcher rule

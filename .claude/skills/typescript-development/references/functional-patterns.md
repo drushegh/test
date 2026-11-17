@@ -91,13 +91,24 @@ type HttpError =
   | { kind: "parse"; message: string };
 
 async function fetchUser(id: string): Promise<Result<User, HttpError>> {
+  let res: Response;
   try {
-    const res = await fetch(`/api/users/${id}`);
-    if (!res.ok) return Err({ kind: "server", statusCode: res.status });
-    return Ok(UserSchema.parse(await res.json()));
+    res = await fetch(`/api/users/${id}`);
   } catch (e) {
     return Err({ kind: "network", message: String(e) });
   }
+  if (!res.ok) return Err({ kind: "server", statusCode: res.status });
+
+  let body: unknown;
+  try {
+    body = await res.json();
+  } catch (e) {
+    return Err({ kind: "parse", message: String(e) });   // malformed JSON
+  }
+  const parsed = UserSchema.safeParse(body);              // wrong shape
+  return parsed.success
+    ? Ok(parsed.data)
+    : Err({ kind: "parse", message: parsed.error.message });
 }
 ```
 

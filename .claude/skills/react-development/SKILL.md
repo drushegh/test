@@ -20,8 +20,10 @@ Consolidated React/Next.js engineering for agents. The rules in this file
 always apply; load `references/` files only when the task touches that
 topic. Boundaries: TypeScript language/typing standards live in
 typescript-development; visual design and Tailwind live in
-frontend-development. This skill owns React behaviour, data flow, and
-performance.
+frontend-development; platform-level web performance — Core Web Vitals,
+loading/caching strategy, service workers/PWA — routes to
+web-performance-development. This skill owns React behaviour, data flow, and
+React-specific render performance.
 
 ## Component Model
 
@@ -38,7 +40,7 @@ pass only the fields the client uses, never whole entities. Details:
 // 1. NEVER define components inside components — new type every render,
 //    full remount: state lost, focus lost, effects re-run
 function Parent({ theme }) {
-  const Child = () => <div className={theme} />;   // ❌ extract and pass props
+  const Child = () => renderThemed(theme);   // ❌ extract and pass props
 }
 
 // 2. Derive state during render — no state+effect mirroring
@@ -49,7 +51,7 @@ const fullName = firstName + " " + lastName;        // ✅ not setState in useEf
 setItems(curr => [...curr, item]);                   // ✅ deps-free useCallback
 
 // 4. Ternary, not &&, when the condition can be 0/NaN
-{count > 0 ? <Badge count={count} /> : null}         // ✅ {count && ...} renders "0"
+count > 0 ? badgeNode : null         // ✅ {count && ...} renders "0"
 
 // 5. Lazy-init expensive state
 useState(() => buildIndex(items));                   // ✅ not useState(buildIndex(items))
@@ -69,7 +71,8 @@ useState(() => buildIndex(items));                   // ✅ not useState(buildIn
    to stream non-critical sections; in RSC, sibling async components
    parallelise — sequential awaits in one component don't.
 2. **Bundle size — CRITICAL.** Dynamic-import heavy components
-   (`next/dynamic`, `ssr: false` for browser-only); avoid barrel-file
+   (`next/dynamic`, `ssr: false` for browser-only — only from a Client
+   Component; Next.js 15+ rejects it in a Server Component); avoid barrel-file
    imports (icon/component libraries cost 200–800ms); defer
    analytics/tracking until after hydration; preload on hover/intent.
 3. **Server work — HIGH.** `React.cache()` for per-request dedup;
@@ -120,20 +123,35 @@ authenticate inside every action, never rely on page-level guards.
   (`.toISOString()`, plain objects).
 - **`redirect()`/`notFound()` inside try/catch** — they throw internally;
   call outside the try, or `unstable_rethrow(error)` first.
-- **`useSearchParams` without a Suspense boundary** — silently makes the
-  whole page client-rendered.
+- **`useSearchParams` without a Suspense boundary** — on a statically
+  rendered route the client bails out to client-side rendering up to the
+  nearest boundary; `next build` fails with "Missing Suspense boundary
+  with useSearchParams". Wrap the reading component in `<Suspense>`.
 - **Hydration mismatches** — browser-only APIs, `new Date()`, random
   values, invalid HTML nesting. Fix with mounted-check, `useId`, or the
   inline-script pattern (no flicker); `suppressHydrationWarning` only for
   genuinely expected differences.
+- **StrictMode double-mount bugs are real cleanup bugs** — setup and
+  teardown of an external resource or imperative-DOM library belong in ONE
+  effect whose cleanup fully undoes it; never "fix" by removing StrictMode.
+- **Derived arrays/objects from a store selector** (`useStore(s =>
+  s.items.filter(...))`) loop the render ("getSnapshot should be cached").
+  Select the stable slice and derive in the body, or `useShallow`.
+- **Hooks below an early return** — keep `eslint-plugin-react-hooks` in the
+  lint gate; recommend adding it if the repo lacks it.
+- **No error boundary** — one render-phase throw (often parsing untrusted
+  data in a grid cell) blanks the whole app; wrap page content in a
+  route-keyed boundary. Effect, identity and interop traps:
+  [references/effects-and-lifecycle.md](references/effects-and-lifecycle.md).
 - **`localStorage`/listeners without care** — version stored schemas,
   wrap in try/catch (throws in private browsing), passive listeners for
   scroll/touch.
 
 ## Agent Workflow Rules
 
-1. **Match the repo**: React version (19 drops `forwardRef`; `use()` over
-   `useContext`), router (App vs Pages), data library, React Compiler
+1. **Match the repo**: React version (19 passes `ref` as a plain prop, so
+   new code needs no `forwardRef` — still supported, slated for
+   deprecation; `use()` over `useContext`), router (App vs Pages), data library, React Compiler
    on/off — these change what correct code looks like.
 2. **Priority order for review**: waterfalls → bundle → server → re-renders
    → micro-optimisations. Never lead with micro-optimisations; never
@@ -141,8 +159,11 @@ authenticate inside every action, never rely on page-level guards.
 3. **Before completion**: typecheck, lint, test (per
    typescript-development); for Next.js verify the build
    (`next build`) passes — RSC boundary violations surface at build time.
+   Run the project's full `tsc --noEmit` as a separate gate (a warm `.next`
+   cache has let `next build` exit 0 with broken types), and hit runtime-only
+   routes (OG images, route handlers) on `next start` before calling them done.
 4. **Animations between UI states**: use the native View Transition API
-   via React's `<ViewTransition>` (experimental) rather than animation
+   via React's `ViewTransition` (experimental) rather than animation
    libraries — see [references/view-transitions.md](references/view-transitions.md).
 
 ## Reference Index
@@ -154,3 +175,4 @@ authenticate inside every action, never rely on page-level guards.
 | Component architecture: compound components, providers, variants | [references/composition.md](references/composition.md) |
 | RSC boundaries, Next.js conventions, data patterns, images/fonts/metadata, errors | [references/rsc-and-nextjs.md](references/rsc-and-nextjs.md) |
 | Page/route/list animations, shared element morphs | [references/view-transitions.md](references/view-transitions.md) |
+| Effects, StrictMode, stale closures, keys, external stores, error boundaries, outside-click, duplicate React, library adoption | [references/effects-and-lifecycle.md](references/effects-and-lifecycle.md) |

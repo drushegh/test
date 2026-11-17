@@ -11,6 +11,20 @@ login) and deployed (MI) without branching. Connection strings and
 client secrets are the legacy path; every one you keep is a rotation
 liability and an audit finding.
 
+## Access tokens expire mid-run
+
+Entra access tokens live for roughly an hour (the exact lifetime varies).
+A script that calls `az account get-access-token --resource <uri>` once
+and caches the result for the process lifetime works in testing and
+fails with 401 an hour into a long migration or batch job.
+
+- Prefer an SDK credential (`DefaultAzureCredential`, `AzureCliCredential`)
+  and call `get_token` / `GetTokenAsync` per request or per batch — the
+  credential caches and refreshes for you.
+- Hand-rolled HTTP: keep `expiresOn` / `expires_on` from the CLI output and
+  re-mint a few minutes before it; **on any 401, re-mint once and retry
+  the request once**, then fail loudly. Never loop on 401.
+
 ## RBAC discipline
 
 - Scope as low as possible (resource > resource group > subscription);

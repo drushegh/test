@@ -44,9 +44,33 @@ function disposeTree(root) {
 }
 ```
 
+- `renderer.dispose()` frees the renderer's own internals. It does
+  **not** dispose the scene's geometries, materials or textures, nor
+  `scene.environment`/`scene.background` textures, PMREM output or
+  post-processing render targets. Dispose those explicitly (the
+  traverse above, plus `scene.environment?.dispose()`,
+  `composer.dispose()` / each pass's targets).
 - SPA/HMR leak pattern: re-creating renderer/scene on remount without
   disposing the old — watch `renderer.info.memory` across
-  navigations.
+  navigations. In a Vite-style dev server, HMR also stacks event
+  listeners on static `index.html` elements and `window`, module-scope
+  state (bloom settings, composer targets) and animation loops. Record
+  every side effect as a cleanup thunk and replay them on dispose:
+
+```javascript
+const cleanups = [];
+const onEl = (el, type, fn, opts) => {
+  el.addEventListener(type, fn, opts);
+  cleanups.push(() => el.removeEventListener(type, fn, opts));
+};
+// ... onEl(window, 'resize', onResize); cleanups.push(() => disposeTree(scene));
+cleanups.push(() => renderer.setAnimationLoop(null), () => renderer.dispose());
+if (import.meta.hot) import.meta.hot.dispose(() => cleanups.splice(0).forEach((f) => f()));
+```
+
+  Keep mutable state inside factories (`createScene()` returns its
+  state and its `dispose()`), not at module scope, so a reload starts
+  clean.
 - Reuse scratch objects in loops (`_v3.set(...)`), never allocate
   per frame; reuse geometries/materials across meshes.
 
@@ -71,6 +95,16 @@ function disposeTree(root) {
   static shadow baking; one shadow-casting light unless justified.
 - Post-processing passes each cost a full-screen render — budget
   them, combine where possible (`shaders-webgpu.md`).
+- **Transmission is a hidden extra pass.** In `WebGLRenderer` (checked
+  at r186), the first visible material with `transmission > 0` makes
+  the renderer re-draw all opaque objects into a mipmapped
+  multisampled render target, once per camera per frame. Every
+  `DoubleSide` transmissive object then adds a back-face draw (and
+  flips `material.needsUpdate` twice). Glass-heavy scenes can double the draw
+  calls. Measure `renderer.info.render.calls` with and without the
+  glass, consider `transmissionResolutionScale` < 1, prefer
+  `FrontSide` or plain `transparent` + `opacity` where refraction
+  isn't visible, and test on a throttled or low-end GPU.
 - Texture VRAM: KTX2 keeps textures compressed ON the GPU — biggest
   single mobile win (`assets-loaders.md`).
 

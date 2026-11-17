@@ -91,8 +91,13 @@ target's actual version/compat level.
   lookups they save; duplicate/overlapping indexes never consolidated.
 - **GUID/UUIDv4 clustering keys** fragmenting T-SQL clustered indexes — use
   sequential surrogates (PG 18+: `uuidv7()` mitigates).
-- **`WHERE` predicates on the outer table of a `LEFT JOIN`** silently
-  converting it to an inner join.
+- **`WHERE` predicates on the inner (optional, right-hand) table of a
+  `LEFT JOIN`** silently converting it to an inner join — put those
+  conditions in the `ON` clause (or test `IS NULL` deliberately).
+- **SQLite PRAGMAs set in a migration** — `foreign_keys` is per-connection
+  and a no-op inside a transaction; set PRAGMAs in the pool's connection
+  init. Enforce uniqueness with a `UNIQUE` index, never SELECT-then-INSERT
+  (`references/sqlite-and-postgres-gotchas.md`).
 - **Untested restores and unbounded autogrowth** — backups exist when a
   restore has been proven, not before.
 
@@ -117,6 +122,7 @@ Load on demand:
 - `references/security.md` — injection-safe dynamic SQL, privileges, RLS, encryption
 - `references/platform-azure.md` — Azure SQL tiers/tuning; PG Flexible Server; connections
 - `references/migrations.md` — expand–contract, SSDT/DACPAC vs script-based, online changes
+- `references/sqlite-and-postgres-gotchas.md` — SQLite PRAGMAs/upserts/bare columns, conditional writes, accent-insensitive search (`unaccent`), PostgREST/Supabase filter traps
 
 ## Boundaries
 

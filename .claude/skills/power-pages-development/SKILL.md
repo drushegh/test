@@ -77,7 +77,7 @@ require sub-15-minute reflection of out-of-band Dataverse writes.
 - URL uses the **EntitySetName** (`/_api/accounts`); site settings use the
   **logical name** (`Webapi/account/enabled`). Mixing these up is the #1
   config failure.
-- `Webapi/<table>/fields` is **mandatory** — missing it throws "No fields
+- `Webapi/{table}/fields` is **mandatory** — missing it throws "No fields
   defined for this entity". Value: `*` or a comma-separated column list.
 - No Bearer token. Session cookies authenticate; every mutating request
   needs a `__RequestVerificationToken` header fetched from
@@ -91,7 +91,10 @@ require sub-15-minute reflection of out-of-band Dataverse writes.
 - **Code site / SPA** (React, Vue, Angular, Astro — static builds only, no
   SSR): full front-end control, Web API for all data, no out-of-box forms
   or lists, limited SEO. Right for highly interactive UX. Same server-side
-  security model applies. See references/code-sites.md.
+  security model applies. See references/code-sites.md — including the
+  two blockers to check on day one: `js`/`svg` in the environment's
+  Blocked Attachments (uploads fail opaquely) and the tenant governance
+  control that stops non-production sites going public.
 
 ## Agent Workflow Rules
 
@@ -115,5 +118,5 @@ require sub-15-minute reflection of out-of-band Dataverse writes.
 | references/web-api.md | /_api CRUD, site settings, CSRF client pattern |
 | references/security.md | Table permissions, web roles, page permissions, authentication |
 | references/forms-lists.md | Basic forms, multistep forms, lists, form JavaScript |
-| references/code-sites.md | SPA code sites, pac upload-code-site, auth/user context |
+| references/code-sites.md | SPA code sites, pac upload-code-site, blocked attachments, going public, auth/user context |
 | references/alm-deployment.md | pac pages CLI, deployment profiles, enhanced data model, pipelines, cache ops |

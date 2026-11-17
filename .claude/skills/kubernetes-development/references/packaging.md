@@ -34,10 +34,13 @@ Practices that matter:
 ```bash
 helm lint ./mychart
 helm template app ./mychart -f values-prod.yaml | kubeconform -strict -
-helm upgrade --install app ./mychart -f values-prod.yaml --atomic --wait
+helm upgrade --install app ./mychart -f values-prod.yaml --rollback-on-failure --wait
 ```
 
-`--atomic` rolls back a failed upgrade; `helm rollback app N` reverts. Avoid
+`--rollback-on-failure` (Helm 4; named `--atomic` in Helm 3 — deprecated in
+Helm 4, where `helm upgrade` still accepts it with a warning but
+`helm install --atomic` errors) rolls back a failed upgrade;
+`helm rollback app N` reverts. Avoid
 heavy logic and `lookup`-driven templates — charts should be reproducible.
 
 ## Kustomize — when you want plain YAML + overlays
