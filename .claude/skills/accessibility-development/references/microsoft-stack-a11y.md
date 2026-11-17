@@ -70,5 +70,6 @@ these products ship monthly.
 ## Office documents in the journey
 
 EN 301 549 clause 10 applies (tagged PDF, real structure). Deep
-remediation guidance: Community-Access reference repo (word/excel/
-powerpoint/pdf agents) in `Skills\Accessibility\Reference skills\`.
+remediation guidance: the Community-Access `accessibility-agents` repo
+(word/excel/powerpoint/pdf agents) —
+<https://github.com/Community-Access/accessibility-agents>.

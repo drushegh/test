@@ -32,7 +32,9 @@ builder.Services.AddOpenTelemetry()
         .AddAspNetCoreInstrumentation()
         .AddHttpClientInstrumentation()
         .AddMeter("MyApp.Metrics"))                   // must match Meter names
-    .WithLogging(logging => logging.IncludeScopes = true)
+    .WithLogging(
+        configureBuilder: null,                       // 1-arg overload takes LoggerProviderBuilder, not options
+        configureOptions: options => options.IncludeScopes = true)
     .UseOtlpExporter();   // one exporter, all signals; reads OTEL_EXPORTER_OTLP_ENDPOINT (default localhost:4317)
 ```
 

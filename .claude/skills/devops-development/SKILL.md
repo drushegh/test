@@ -59,6 +59,10 @@ production-change seriousness.
   repos is the maintenance tarpit.
 - Timeouts on every job; cleanup steps `condition: always()` /
   `if: always()`; `concurrency` groups to cancel superseded runs.
+- **Host git integrations bypass CI.** Cloudflare Pages, Vercel and
+  Netlify deploy on push regardless of CI status — CI only gates
+  production if `main` is protected by required checks or auto-deploys
+  are off and CI deploys (`references/hosting-platform-integrations.md`).
 - Validate YAML before pushing: `actionlint` for workflows, ADO
   pipeline validation API / dry runs for azure-pipelines.yml.
 
@@ -92,4 +96,5 @@ protected branches.
 | references/github-actions.md | Workflows, reusable workflows, actions, runners |
 | references/pipeline-security.md | OIDC, secrets, supply chain, fork risks |
 | references/deployment-patterns.md | Gates, blue/green, rollback, versioning, IaC in CI |
+| references/hosting-platform-integrations.md | Cloudflare Pages / Vercel / Netlify git deploys, `_headers`, Vercel Hobby crons, local-green-CI-red |
 | references/power-platform-cicd.md | Solutions, pac/azd in pipelines, Power BI/Fabric/Pages CI-CD |

@@ -30,9 +30,12 @@ void OnRep_Health();   // client-side reaction (UI, effects)
   cosmetic reactions there, never gameplay authority.
 - Conditions (`COND_OwnerOnly`, `COND_SkipOwner`, …) and
   `NetUpdateFrequency`/dormancy control bandwidth.
-- Only UPROPERTY-marked, registered properties replicate; TArrays of
-  structs replicate whole-array (consider `FFastArraySerializer` for
-  big lists).
+- Only UPROPERTY-marked, registered properties replicate. Plain
+  TArrays delta-replicate changed elements but are compared in full
+  on the server each update, resend shifted elements on
+  insert/remove, and give only a whole-array `OnRep_` (consider
+  `FFastArraySerializer` for big or churny lists: per-item deltas and
+  add/change/remove callbacks).
 
 ### RPCs
 

@@ -10,8 +10,8 @@ floor, not polish.
 - 8pt spacing grid (8/16/24/32/40/48).
 - Primary actions in the thumb zone (bottom half); destructive actions
   away from habitual tap positions.
-- Flexible layouts from iPhone SE (375pt) to Pro Max (430pt) and
-  landscape where supported — no hardcoded widths.
+- Flexible layouts from iPhone SE (375pt) to Pro Max (440pt on the 16/17
+  Pro Max; 430pt on 14/15) and landscape where supported — no hardcoded widths.
 
 ## Typography and Dynamic Type
 
@@ -78,9 +78,12 @@ navigation substitute.
 - ATT (tracking) prompt only when there's real value to explain; denial
   fully respected — features don't degrade out of spite (review
   rejection territory).
-- Sign in with Apple offered alongside third-party logins (required when
-  you offer social login); core features usable without an account where
-  feasible.
+- Offering third-party/social login? App Review Guideline 4.8 (revised
+  Jan 2024) requires an *equivalent privacy-focused* login option as well
+  (limits data to name + email, allows a private relay email, no ad
+  tracking without consent). Sign in with Apple satisfies it and is the
+  usual choice, but is no longer strictly mandatory. Core features usable
+  without an account where feasible.
 - One-shot location: `LocationButton`/`CLLocationButton` over a
   standing permission.
 

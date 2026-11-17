@@ -2,6 +2,11 @@ Deep audit across framework integrity, code quality, contracts, state
 files, and tests. On-demand companion to the always-on self-checks
 (doctor.sh per cold start, insights/analyse.sh weekly). Use this when:
 
+> **Step 0 — v2 self-route (read this first):** if `.claude/.framework-version` contains a
+> `FRAMEWORK_LINE=v2` line, this project runs the CCMAF v2 plugins — invoke the
+> `ccmaf:healthcheck` skill (Skill tool) and follow IT instead of this file; stop reading
+> here. This bare command is the v1-line copy, kept as authored source.
+
 - Significant framework or project changes have landed
 - Before a major merge
 - The cold-start nudge said it's time
@@ -83,21 +88,24 @@ Read `CLAUDE.md` "Commands" section. Match common patterns:
 `npm test`, `pytest`, `go test`, `cargo test`, `dotnet test`,
 `npm run lint`, `ruff check`, `eslint`, `golangci-lint`.
 
-If neither found, Parts 4 auto-skip with a note in the findings.
+If neither found, Part 5 (automated checks) auto-skips with a note in the findings.
 
 **0.4. Detect contracts.**
 
 - ECOSYSTEM.md contains `<!-- contract:ID` blocks → contracts live in
   ECOSYSTEM.md.
 - `contracts/` directory at project root → per-file contracts.
-- Neither → Part 3 (contract verification) auto-skips.
+- Neither → Part 3's contract *category* auto-skips; the rest of Part 3
+  (reconciler full mode: duplicate/seam/convention drift) still runs —
+  see Part 3's own gate.
 
 **0.5. Detect if there's any project code at all.**
 
 If 0.2 returned no source dirs AND no test dirs, the framework instance
 holds no project (e.g., fresh clone before code arrives, or the
-upstream framework repo itself). Parts 1, 2, and 4 auto-skip —
-framework integrity and state-file consistency still run.
+upstream framework repo itself). Parts 2 and 3 auto-skip (no project
+code to review, no contract/reconciler-full sweep to run against it) —
+Part 1 (framework integrity) and Part 4 (state-file consistency) still run.
 
 **0.6. Tell the user what was detected.** Before running any
 expensive step, summarise the detected shape (mode, project name,
@@ -125,9 +133,18 @@ if it appears; include the report summary either way.
 last `HEALTHCHECK_FW_WINDOW` commits (default 10):
 
 ```bash
-git diff --name-only HEAD~${HEALTHCHECK_FW_WINDOW:-10} -- \
+# Clamp the window to the history that exists: HEAD~N on a repo with <= N
+# commits is an unknown revision, and a swallowed git error must never read
+# as "no changes" (that silently skipped the deep audit on young repos).
+win="${HEALTHCHECK_FW_WINDOW:-10}"
+total="$(git rev-list --count HEAD 2>/dev/null)" || total=0
+if [ "$total" -gt "$win" ]; then base="HEAD~$win"
+else base="$(git hash-object -t tree /dev/null)"   # empty tree: every commit is in the window
+fi
+git diff --name-only "$base" -- \
   .claude/agents/framework/ .claude/hooks/ .claude/commands/ \
-  .claude/framework/ CLAUDE.framework.md 2>/dev/null
+  .claude/framework/ CLAUDE.framework.md \
+  || echo "HEALTHCHECK-FW-WINDOW: git diff failed — treat as CHANGED"
 ```
 
 **If changes detected → deep framework audit via reviewer subagent:**
@@ -137,8 +154,7 @@ in Part 0 so the subagent doesn't re-derive it (scoped-anchor rule —
 shape context only, never findings):
 
 > **Detected shape (from Part 0):** source dirs: `<HEALTHCHECK_SOURCE_DIRS
-> or "none — framework-only">`; state root: `<.claude/ |
-> .claude/framework/self/ (framework-self mode)>`; contracts:
+> or "none — framework-only">`; state root: `.claude/`; contracts:
 > `<ECOSYSTEM.md | contracts/ | none>`.
 >
 > **Independence rule.** Do NOT read `.claude/review-findings.md`
@@ -194,6 +210,18 @@ shape context only, never findings):
 > - No secrets or API keys in agent definitions, commands, hooks, or skills?
 > - Hook scripts don't execute untrusted input or download from URLs?
 >
+> **Output discipline — findings about a safety or security control.** When a
+> finding concerns a safety/security control (e.g. the destructive-command
+> guard hook), record the weakness **class** and the defensive remediation
+> only — never a working bypass, a runnable payload, or a list of
+> destructive commands. Naming the class and the fix **is a complete
+> finding**: do not treat class-level as under-delivering or add concrete
+> specifics to compensate. Cite the control and its test fixtures by
+> file:line, and frame fixes as "add coverage / a fixture asserting the
+> guard blocks <class>". Keep class-level precision (e.g. "matches literal
+> strings but doesn't normalise paths", "covers filesystem roots but not
+> raw device nodes") — precise and defensive, not vague.
+>
 > Return findings categorised as:
 > - **BROKEN** (blocks work or produces incorrect behaviour)
 > - **CONFLICT** (two parts of the framework contradict each other)
@@ -202,7 +230,9 @@ shape context only, never findings):
 > - **STALE** (exists and is referenced but content is outdated)
 > - **OK** (checked, no issues)
 
-**If no framework changes detected → skip the deep audit.** Doctor +
+**If no framework changes detected (the command above succeeded with
+empty output) → skip the deep audit.** A git failure (the `treat as
+CHANGED` line) is NOT "no changes" — run the deep audit instead. Doctor +
 insights output alone is sufficient — the framework hasn't moved.
 
 **1.4. PERSIST.** Append findings to `.claude/review-findings.md`
@@ -235,35 +265,59 @@ Reviewer subagent. Prompt template (fill in the detected sources):
 >
 > Do NOT load state files. Return findings grouped by severity
 > (CRITICAL / HIGH / MEDIUM / LOW) with file:line, issue, impact,
-> and suggested fix.
+> and suggested fix. If a suggested fix names a specific API, library,
+> flag, or value, mark it VERIFIED or UNVERIFIED (behavioral-principles §4)
+> — a quick-read guess must not read as a decision to a later session.
+>
+> **Output discipline — findings about a safety or security control.** For
+> any finding on a safety/security control, record the weakness **class**
+> and the defensive fix only — never a working bypass, a runnable payload,
+> or a destructive-command list. Naming the class and the fix **is a
+> complete finding**; do not add concrete specifics to compensate. Frame
+> fixes as "add coverage for <class>". Keep class-level precision, not vague.
 
 **PERSIST** to `.claude/review-findings.md`. Release from context.
 
 ---
 
-## Part 3 — Contract verification (skip if no contracts)
+## Part 3 — Contract verification & horizontal reconciliation (reconciler, full mode)
 
-Reviewer subagent. Prompt:
+**Gate: skip only if Part 0.5 found no project code at all** (not "skip
+if no contracts" — reconciler's other three categories, duplicate/seam/
+convention drift, have value even on a project with zero `contract:`
+blocks; the old narrower gate would silently skip those on a
+contracts-free project).
 
-> **Independence rule.** Do NOT read `.claude/review-findings.md`
-> before forming your audit. That file is write-only for you. Verify
-> contracts against source files alone.
->
-> For each contract in ECOSYSTEM.md (blocks tagged
-> `<!-- contract:ID status:stable -->`) OR in `contracts/` directory:
-> read the contract, find the source file(s) implementing it, and
-> verify signatures, params, return types, and behaviour match.
->
-> Also verify ECOSYSTEM.md module boundaries — all modules listed,
-> paths correct. Check contract markers — `status:draft` only where
-> work is in flight; `status:stable` only where implementation exists.
->
-> Return:
-> - **MISMATCH** (contract says X, code does Y)
-> - **MISSING** (code exists, no contract)
-> - **DRIFT** (contract exists but signature changed unannounced)
+Reconciler subagent, `full` mode. Prompt:
 
-**PERSIST** to `.claude/review-findings.md`. Release from context.
+> Reconcile in `full` mode: whole-repo sweep, no delta. Deterministic
+> tools first (jscpd if present, export inventories, name-similarity
+> greps, compiler/type-check where available) — spend judgment only on
+> the candidate list they surface.
+>
+> Contract category — for each `<!-- contract:ID status:stable -->`
+> block in ECOSYSTEM.md (or `contracts/`): read the contract, find the
+> implementation, verify signatures/params/return types/behaviour match.
+> Also verify ECOSYSTEM.md module boundaries and architecture.md's
+> Module Structure against the actual layout. Report contract findings
+> using: **MISMATCH** (contract says X, code does Y) / **MISSING** (code
+> exists, no contract) / **DRIFT** (contract exists, signature changed
+> unannounced) — same vocabulary healthcheck has always used, so this
+> replaces the Reviewer's old contract-verification pass rather than
+> duplicating it.
+>
+> Duplicate / seam / convention categories — per your agent definition.
+>
+> On success, write the findings JSON (`.claude/console/reconcile/<scope-id>.json`,
+> gated on `.claude/console/` existing) and touch
+> `.claude/telemetry/.last-reconcile`.
+>
+> Return per your Return Format section, plus the MISMATCH/MISSING/DRIFT
+> lines inline so they can be persisted below.
+
+**PERSIST** the returned findings (contract lines in MISMATCH/MISSING/DRIFT
+form, other categories as-is) to `.claude/review-findings.md`. Release from
+context.
 
 ---
 
@@ -330,11 +384,20 @@ the command produces.
 memory.** The ephemeral-context rule applies to YOU as much as to any
 other agent.
 
-1. **CRITICAL / BROKEN / MISMATCH / MISALIGNMENT** → create P0 tasks
-   in `TASKS.md` (feature lane or Bug-Fix Lane as appropriate).
-   Each task includes a reference back to the findings file entry.
-2. **STALE** → fix state files directly, commit separately.
-3. **ORPHANED / REDUNDANT** → flag for the next architect session;
+Each part reports in its own vocabulary — Part 1: BROKEN / CONFLICT /
+ORPHANED / REDUNDANT / STALE / OK; Part 2: CRITICAL / HIGH / MEDIUM / LOW;
+Part 3: MISMATCH / MISSING / DRIFT (+ the reconciler's own categories);
+Part 4: MISALIGNMENT / STALE. Map every label onto one of three **tiers**
+(these tiers are also what `--verify` counts):
+
+1. **Blocking** — **CRITICAL / BROKEN / CONFLICT / MISMATCH /
+   MISALIGNMENT** → create P0 tasks in `TASKS.md` (feature lane or
+   Bug-Fix Lane as appropriate). Each task includes a reference back to
+   the findings file entry.
+   **Should-fix** — **HIGH / MEDIUM / MISSING / DRIFT** → create tasks at
+   normal priority (same back-reference rule).
+2. **STALE** (Advisory) → fix state files directly, commit separately.
+3. **LOW / ORPHANED / REDUNDANT** (Advisory) → flag for the next architect session;
    log entries in `FRAMEWORK-SUGGESTIONS.md` if they're
    framework-level, otherwise in `GOTCHAS.md`.
 4. After each batch of fixes, update `TASKS.md` and `STATUS.md` —
@@ -404,7 +467,7 @@ characterise more precisely.
    at the start of every run. Each of the N runs starts from a clean
    `review-findings.md`. Confirm this is happening before run 2 starts.
 4. **Capture per-run counts.** After each run, snapshot the finding
-   counts by category (CRITICAL / WARNING / SUGGESTION / by part) to
+   counts by Part 7 tier (Blocking / Should-fix / Advisory) and by part to
    a temp summary. Note: you (the orchestrator) WILL hold prior runs'
    results in context by the comparison step — that is expected and
    unavoidable. The anchoring defenses that actually work are the
@@ -436,8 +499,8 @@ sort it visibly at top). Format:
 # /healthcheck --verify N=<N> — <ISO>
 
 ## Per-run totals
-| Run | CRITICAL | WARNING | SUGGESTION | TOTAL |
-| --- | -------- | ------- | ---------- | ----- |
+| Run | Blocking | Should-fix | Advisory | TOTAL |
+| --- | -------- | ---------- | -------- | ----- |
 | 1   | …        | …       | …          | …     |
 | 2   | …        | …       | …          | …     |
 | N   | …        | …       | …          | …     |

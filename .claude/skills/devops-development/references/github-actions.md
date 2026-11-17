@@ -23,8 +23,10 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with: { fetch-depth: 1 }
       - uses: actions/setup-node@v4   # pin to SHA in production repos
-        with: { node-version: 20, cache: npm }
-      - run: npm ci && npm test
+        with: { node-version: 24, cache: npm }   # an in-support LTS line (Node 20 is EOL)
+      - run: npm ci
+      - run: npm test
+      - run: npm run build          # produces dist/ — upload fails on a missing path
       - uses: actions/upload-artifact@v4
         with:
           name: dist-${{ github.sha }}
@@ -39,9 +41,11 @@ jobs:
       id-token: write          # OIDC
       contents: read
     steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6 — deploy.sh lives in the repo
       - uses: actions/download-artifact@v4
         with:
           name: dist-${{ github.sha }}
+          path: dist/              # default is the workspace root, not dist/
       - uses: azure/login@v2
         with:
           client-id: ${{ vars.AZURE_CLIENT_ID }}
@@ -84,9 +88,11 @@ untrusted input (`github.event.*` strings) into `run:` — inject via
   debug logging (`ACTIONS_STEP_DEBUG`); `gh` CLI scripts the rest
   (dispatch, watch, artifact download).
 - `workflow_dispatch` with typed inputs for operational jobs;
-  `workflow_run` for chaining; schedule (`cron`) runs in UTC and gets
-  disabled after 60 days of repo inactivity — don't bet compliance
-  jobs on it without monitoring.
+  `workflow_run` for chaining; schedule (`cron`) runs in UTC and, in **public**
+  repos, is auto-disabled after 60 days without repo activity (private
+  repos are not auto-disabled); scheduled runs can also be delayed or
+  dropped under load — don't bet compliance jobs on it without
+  monitoring.
 
 Docs: https://docs.github.com/actions ·
 https://docs.github.com/actions/sharing-automations/reusing-workflows ·

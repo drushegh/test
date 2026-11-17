@@ -8,8 +8,28 @@
 .gitattributes text eol=lf
 *.sh    text eol=lf
 *.bash  text eol=lf
+*.mjs   text eol=lf
 *.bats  text eol=lf
 *.py    text eol=lf
 *.json  text eol=lf
 *.txt   text eol=lf
+*.md     text eol=lf
 *.conf  text eol=lf
+*.toml  text eol=lf
+
+# Extensionless version-pin files the update scripts `source` line-by-line.
+# Without an eol rule these check out CRLF under core.autocrlf=true (Windows
+# default), which corrupts the sourced values (e.g. `ls-remote "url\r"` fails
+# → check-updates wrongly reports "offline" forever). The per-line ${var%$'\r'}
+# strips stay as defense-in-depth for files this cannot reach.
+.framework-version text eol=lf
+.skills-version    text eol=lf
+.console-version   text eol=lf
+# Their scaffold templates: plugins/ccmaf/templates/framework-version and
+# .scaffold-rev are copied verbatim into consumer .claude/ (as
+# .framework-version / .scaffold-rev) and parsed line-by-line, so a CRLF
+# checkout here would seed every new consumer with the same \r corruption.
+# *.template covers the healthcheck.conf.template sources (sourced as .conf).
+framework-version  text eol=lf
+.scaffold-rev      text eol=lf
+*.template         text eol=lf

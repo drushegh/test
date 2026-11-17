@@ -4,6 +4,11 @@ manifest presence (same approach as `init.sh` and `auto-format.sh`). Each
 check is opt-in by tool availability; missing tooling produces an
 informational note rather than a hard failure.
 
+> **Step 0 — v2 self-route (read this first):** if `.claude/.framework-version` contains a
+> `FRAMEWORK_LINE=v2` line, this project runs the CCMAF v2 plugins — invoke the
+> `ccmaf:security` skill (Skill tool) and follow IT instead of this file; stop reading
+> here. This bare command is the v1-line copy, kept as authored source.
+
 This command exists because AI-generated code consistently surfaces in
 research with concrete security failure modes: ~40% of high-risk
 scenarios vulnerable in one Copilot study, package-hallucination rates
@@ -18,6 +23,12 @@ when /healthcheck nudges.
 
 Below is a runbook. Follow in order. Each step is independent — if one
 tool isn't installed, skip and note it; don't halt.
+
+**Output discipline.** For any finding about a safety or security control,
+record the weakness *class* and the defensive fix only — never a working
+bypass, a runnable payload, or a destructive-command list. Naming the class
+and the fix is a complete finding; keep class-level precision, not vague.
+(Tool output — gitleaks/SAST/SCA — is captured as the tool emits it.)
 
 ---
 
@@ -49,7 +60,14 @@ calls (advisory lookups, SCA against public databases).
 Goal: detect credentials, API keys, tokens, private keys in the working
 tree. Prefer in priority order; first one available wins.
 
-1. **gitleaks** (if installed): `gitleaks detect --no-banner --redact`
+1. **gitleaks** (if installed): `gitleaks dir --no-banner --redact .` scans
+   the working tree on disk, uncommitted files included (v8.19+; on older
+   builds `gitleaks detect --no-git --no-banner --redact`). Also run
+   `gitleaks git --no-banner --redact` (older: `gitleaks detect --no-banner
+   --redact`) — that mode scans commit HISTORY only, which catches a secret
+   deleted from the tree but still in a past commit, but it never sees
+   uncommitted changes, so it is an addition to the `dir` scan, not a
+   substitute for it.
 2. **trufflehog** (if installed): `trufflehog filesystem --no-update .`
 3. **Fallback grep** (always runs): scan for high-signal patterns:
    ```bash
@@ -77,7 +95,7 @@ Pick the tool that matches the stack. Each is opt-in by tool availability.
 | Stack | Preferred | Fallback |
 | ----- | --------- | -------- |
 | Python | `bandit -r <src>` | `ruff check --select=S <src>` (`S` is bandit-like ruleset) |
-| Node/TS | `npx semgrep --config=p/javascript --config=p/typescript .` | `npm audit --audit-level=moderate` (covers SCA too) |
+| Node/TS | `semgrep --config=p/javascript --config=p/typescript .` — ONLY if `command -v semgrep` (install: `pip install semgrep` or `brew install semgrep`). Do NOT `npx semgrep`: the npm package named `semgrep` is a v0.0.1 name-squat, not the tool — `npx` would fetch and run it (the exact slopsquat this command warns about). Missing → use the fallback. | `npm audit --audit-level=moderate` (covers SCA too) |
 | Go | `gosec ./...` | `go vet ./...` |
 | Rust | `cargo clippy -- -W clippy::all -W clippy::pedantic` (cherry-pick security lints) | `cargo audit` (covers SCA) |
 | .NET | `dotnet list package --vulnerable --include-transitive` + Roslyn analyzers | — |
@@ -92,8 +110,13 @@ Capture findings classified as security/CWE; ignore style-only lints
 since these are the most-reported AI failure modes in published studies:
 
 ```bash
-# SQL string interpolation (Microsoft data-formulator case)
-grep -rIn -E '(execute|query|exec|raw)[[:space:]]*\([[:space:]]*(f"|"|`)[^,)]*\$\{|%s' <src> 2>/dev/null
+# SQL string interpolation (Microsoft data-formulator case). One call prefix, then the
+# INTERPOLATING first-argument forms only: JS template ${...}, Python f-string, a literal
+# followed by the % operator, + concatenation, or .format(). A parameterised call —
+# execute("... %s", (x,)) / query('... ?', [x]) — has a comma after the literal and is
+# NOT flagged.
+Q="[\"'\`]"
+grep -rIn -E "(execute|query|exec|raw)[[:space:]]*\([[:space:]]*(\`[^\`]*\\\$\{|[fF]$Q[^\"']*\{|$Q[^\"'\`]*$Q[[:space:]]*(%|\+|\.format\())" <src> 2>/dev/null
 
 # Bare exception swallowing (Claude ArchiveBox case)
 grep -rIn -E '^\s*(except:|except Exception:|catch\s*\([^)]*\)\s*\{\s*\}|catch\s*\(_\))' <src> 2>/dev/null
@@ -121,8 +144,10 @@ verification of every newly-added package (slopsquatting defense).
 By stack:
 
 - **Node**: `npm audit --omit=dev --audit-level=moderate` — captures
-  HIGH/CRITICAL advisories. Also run `npx better-npm-audit audit` if
-  installed for SARIF output.
+  HIGH/CRITICAL advisories. If `better-npm-audit` is already installed
+  (`command -v better-npm-audit`), also run `better-npm-audit audit` for
+  SARIF output — do NOT `npx`-fetch it on demand (unpinned `npx <tool>`
+  auto-install is the slopsquat surface Part 4a flags as CRITICAL).
 - **Python**: `pip-audit` (if installed) or `safety scan` against
   `requirements.txt` / `pyproject.toml`. If neither installed, query
   PyPI for each new dep's existence (the `verify-deps.sh` hook covers
@@ -183,8 +208,13 @@ rewriting hook that embeds `$cmd` by design).
 - `.gitignore` covers `.env`, `.env.*`, `settings.local.json`,
   `worktrees/`, `.claude/review-findings/`, `.claude/security-findings/`,
   any project-specific secret files.
-- No `--no-verify` or `-c commit.gpgsign=false` in recent commits
-  (`git log --oneline -20`).
+- Hook/signing bypass. `git commit --no-verify` leaves no trace in a
+  commit, so it cannot be detected from history after the fact — check the
+  configuration that would make bypass silent instead:
+  `git config --show-origin --get core.hooksPath` is unset or points at the
+  project's expected hooks dir (not an empty/disabled one), and, only if the
+  project requires signed commits, `git log --format='%h %G? %s' -20` shows
+  no `N` (unsigned) entries.
 
 These overlap with `doctor.sh` Check 1 / `/healthcheck` Part 1.3 (which
 check config *integrity* — do referenced files exist); Part 4 checks
@@ -199,7 +229,9 @@ that may indicate verbatim copy. Skip if the project is fully internal
 and not redistributed.
 
 - **Licence aggregation**:
-  - Node: `npx license-checker --production --summary`
+  - Node: `license-checker --production --summary` — only if `command -v
+    license-checker` (install `npm i -g license-checker`); skip rather than
+    `npx`-fetching it on demand (unpinned auto-install — see Part 4a).
   - Python: `pip-licenses --format=markdown` if installed
   - Rust: `cargo about generate` if installed
   - Go: `go-licenses report ./...` if installed
@@ -227,7 +259,7 @@ Same as `/healthcheck` Part 6-7:
 
 ## Edge cases
 
-- **No project code (framework-self mode upstream).** Parts 2, 3, 5
+- **No project code (framework-only repo / fresh clone).** Parts 2, 3, 5
   skip with a note. Part 1 (secret scanning) and Part 4 (workflow
   security) still produce value across the framework machinery itself.
 - **Offline / no network access.** Parts 1 (gitleaks/trufflehog if

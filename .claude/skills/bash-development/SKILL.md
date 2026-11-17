@@ -29,7 +29,10 @@ set -Eeuo pipefail   # -E inherit ERR trap; -e exit on error;
                      # -u unset vars are errors; pipefail catches mid-pipe failures
 IFS=$'\n\t'
 
-readonly SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+readonly SCRIPT_DIR                          # declare-then-assign: a combined
+                                             # `readonly X=$(...)` masks the
+                                             # command's exit status (SC2155)
 trap 'rm -rf -- "${TMPDIR_WORK:-}"' EXIT     # cleanup always runs
 ```
 
@@ -63,8 +66,25 @@ with `bash -n script.sh` for a parse check.
 ## Critical Pitfalls — always check
 
 - **`set -e` blind spots**: doesn't fire inside `if cmd`, `cmd || true`,
-  or `local var=$(cmd)` (the `local` masks the exit code — declare and
-  assign separately).
+  or `local var=$(cmd)` / `readonly var=$(cmd)` / `declare var=$(cmd)` (the
+  declaration keyword masks the command's exit code — SC2155; declare and
+  assign on separate lines).
+- **`set -e` + `pipefail` kill on "no match"**: `grep` exits 1 when
+  nothing matches, so `x=$(grep pat f | head -1)` aborts the script on an
+  optional lookup. Wrap optional reads: `{ grep pat f || true; }`. Never
+  `$(grep -c pat f || echo 0)` — `grep -c` already prints `0` before
+  exiting 1, so you get `"0\n0"`; use `n=$(grep -c pat f) || true`.
+- **Bare `|| return` under `set -e`**: `[[ -f $x ]] || return` returns
+  the *failed test's* status, so the caller dies. Skip-guards are
+  `|| return 0`.
+- **Empty variable as a `sed` address**: `sed -i "${n}s/a/b/" f` with an
+  empty `$n` becomes `s/a/b/` on **every line** (this has wiped whole
+  state files). Guard first — `sed -i "${n:?line number unset}s/a/b/" f`
+  — and check `git diff --stat` after scripted edits to tracked files.
+- **Never edit a script while it runs** (or files it sources): bash reads
+  the file incrementally by byte offset, so the running instance executes
+  a spliced mix — spurious `syntax error near unexpected token` or worse.
+  Stop it first, or write the new version elsewhere and `mv` it in.
 - **`[[ ]]` vs `[ ]`**: `[[ ]]` in Bash scripts (safer, no quoting traps
   in conditionals, regex via `=~`); `[ ]` only for POSIX `sh`.
 - **Predictable temp files**: `/tmp/app-$$.tmp` is a symlink-attack race
@@ -84,8 +104,10 @@ with `bash -n script.sh` for a parse check.
 
 ## Structure Rules
 
-Functions: one concern each; `local -r` declarations first (assign
-command substitutions on a separate line); validate inputs; return
+Functions: one concern each; `local` declarations first (`local x;
+x=$(cmd)` on separate lines so the exit status isn't masked, SC2155 —
+`local -r` only for literal values, since a readonly local can't be
+assigned later); validate inputs; return
 non-zero on failure; errors to stderr. Constants `UPPER_CASE` and
 `readonly`; locals `lower_case`. Argument parsing via `getopts` or a
 `case` loop with `usage()` on `-h`/bad input. Leveled logging functions

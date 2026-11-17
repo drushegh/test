@@ -1,9 +1,9 @@
 # EU AI Act — Engineering Obligations Reference
 
 **Engineering-obligation reference, NOT legal advice.** This area is
-moving FAST — timeline below reflects **June 2026** including the
-provisional Digital Omnibus changes; verify on the Commission's AI
-Act pages / artificialintelligenceact.eu before commitments.
+moving FAST — timeline below reflects **September 2026**, after the
+Digital Omnibus on AI (Regulation (EU) 2026/1744, in force 27 Jul 2026);
+verify on the Commission's AI Act pages / EUR-Lex before commitments.
 
 ## Risk classes (Regulation (EU) 2024/1689)
 
@@ -15,20 +15,22 @@ Act pages / artificialintelligenceact.eu before commitments.
 | Minimal | Spam filters, game AI, most internal tooling | No new obligations |
 | **GPAI models** | Foundation/general-purpose models | Separate provider regime (below) |
 
-## Timeline (June 2026 state — note the Omnibus)
+## Timeline (September 2026 state — Omnibus adopted)
 
 - In force 1 Aug 2024. Prohibitions + AI literacy: applicable since
   **2 Feb 2025**.
 - **GPAI obligations: applicable since 2 Aug 2025** (new models;
   pre-existing models have until 2 Aug 2027). GPAI Code of Practice
   finalised 10 Jul 2025.
-- **2 Aug 2026**: most remaining provisions incl. transparency
-  (labelling AI-generated content) and full AI Office enforcement
-  powers.
-- **Digital Omnibus (provisionally agreed, pending formal adoption
-  expected before Aug 2026): high-risk obligations POSTPONED — Annex
-  III systems to 2 Dec 2027; Annex I embedded to 2 Aug 2028.** Until
-  formally published this is provisional — say so when advising.
+- **2 Aug 2026 (now applicable)**: most remaining provisions incl.
+  Article 50 transparency and full AI Office enforcement powers.
+  Generative systems already on the market before that date get until
+  **2 Dec 2026** for the machine-readable marking of AI-generated
+  content; systems placed on the market later get no grace period.
+- **Digital Omnibus on AI — adopted (Regulation (EU) 2026/1744, OJ
+  24 Jul 2026, in force 27 Jul 2026): high-risk obligations POSTPONED —
+  Annex III systems to 2 Dec 2027; Annex I embedded to 2 Aug 2028.**
+  This is now law, not a proposal.
 
 ## Provider vs deployer (know which you are per project)
 
@@ -50,9 +52,9 @@ oversight designed in (not bolted on); accuracy/robustness/
 cybersecurity (adversarial inputs, model poisoning — STRIDE the ML
 pipeline via `threat-modelling.md`); conformity assessment + CE
 marking + EU database registration; post-market monitoring and
-serious-incident reporting. Public-sector deployers of high-risk
-systems also face fundamental-rights impact assessments — relevant to
-Irish public ICT work.
+serious-incident reporting. Deployers of high-risk systems also face
+fundamental-rights impact assessments — relevant to regulated ICT
+work.
 
 ## Transparency duties (apply broadly from Aug 2026)
 

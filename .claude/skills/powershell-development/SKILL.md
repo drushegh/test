@@ -62,6 +62,12 @@ many tenants' credentials.
   `Format-*` only at the very end (it destroys objects).
 - Output **objects**, not formatted text — the caller decides
   presentation.
+- **Never `setx PATH "%PATH%;..."` / `setx PATH $env:Path`**: `setx`
+  crops values at 1024 characters, and `$env:Path` is the merged
+  machine+user value, so the user PATH is overwritten with a truncated
+  copy of both. Read and write the user scope only, idempotently:
+  `$p = [Environment]::GetEnvironmentVariable('Path','User')`, append if
+  absent, then `[Environment]::SetEnvironmentVariable('Path', $p, 'User')`.
 - Beware `$null` comparisons (`$null -eq $x`, null on the left) and
   automatic unrolling of single-element arrays — the two classic
   silent-logic bugs.

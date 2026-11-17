@@ -52,14 +52,16 @@ domain models are pure Kotlin (in `core:model`, no Android imports).
 ## Sync with WorkManager
 
 ```kotlin
+@HiltWorker   // required: HiltWorkerFactory only builds workers carrying this annotation
 class SyncWorker @AssistedInject constructor(
     @Assisted context: Context,
     @Assisted params: WorkerParameters,
     private val newsRepository: NewsRepository,
     private val topicsRepository: TopicsRepository,
+    @Dispatcher(IO) private val ioDispatcher: CoroutineDispatcher,  // injected, swappable in tests
 ) : CoroutineWorker(context, params), Synchronizer {
 
-    override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
+    override suspend fun doWork(): Result = withContext(ioDispatcher) {
         val ok = listOf(
             newsRepository.syncWith(this@SyncWorker),
             topicsRepository.syncWith(this@SyncWorker),
@@ -70,7 +72,11 @@ class SyncWorker @AssistedInject constructor(
 ```
 
 Sync is scheduled work, not something screens trigger; UI observes the
-database and updates whenever sync lands.
+database and updates whenever sync lands. `@HiltWorker` + `@AssistedInject`
+only work when the `Application` implements `Configuration.Provider` with
+the injected `HiltWorkerFactory` (and the default WorkManager initializer
+is removed from the manifest). Inject dispatchers via a qualifier rather
+than hardcoding `Dispatchers.IO`, so tests can substitute a test dispatcher.
 
 ## Domain Layer (optional)
 
@@ -108,7 +114,8 @@ class ForYouViewModel @Inject constructor(
 
     val uiState: StateFlow<ForYouUiState> =
         getUserNewsResources()
-            .map(ForYouUiState::Success)
+            .map<List<UserNewsResource>, ForYouUiState>(ForYouUiState::Success)
+            .catch { e -> emit(ForYouUiState.Error(e.message ?: "Couldn't load feed")) }
             .stateIn(
                 scope = viewModelScope,
                 started = SharingStarted.WhileSubscribed(5_000),
@@ -123,7 +130,9 @@ class ForYouViewModel @Inject constructor(
 }
 ```
 
-`WhileSubscribed(5_000)` keeps the upstream alive across configuration
+`catch` turns an upstream failure into the `Error` state (it also ends
+that upstream collection — offer a retry that re-subscribes if the error
+is recoverable). `WhileSubscribed(5_000)` keeps the upstream alive across configuration
 changes but stops it when the UI truly leaves. Mutations are fire-down
 suspend calls into the repository — state updates come back reactively
 through the same Flow the UI already observes (no manual state pokes

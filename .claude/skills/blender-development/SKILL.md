@@ -14,15 +14,17 @@ description: >-
 # Blender Development
 
 The knowledge layer for Blender scripting, extension development and
-asset pipelines. **Operational tooling note**: this Cowork environment
-has the `blender-toolkit` plugin (WebSocket live control of a running
-Blender, Mixamo retargeting) — use THAT for hands-on scene manipulation
-tasks; use THIS skill for writing bpy code, building add-ons and
-designing pipelines. They complement, not compete.
+asset pipelines. **Operational tooling note**: this skill is the
+knowledge layer only — it ships no live-control tooling. If your
+environment provides a Blender live-control tool (an MCP server or
+plugin driving a running Blender), use that for hands-on scene
+manipulation and THIS skill for writing bpy code, building add-ons and
+designing pipelines; otherwise drive Blender headless (see
+`references/automation-headless.md`).
 
 ## Version state (June 2026 — verify on blender.org)
 
-**Blender 5.0 released 17 March 2026** (ACES colour pipelines/HDR,
+**Blender 5.0 released 18 November 2025** (ACES colour pipelines/HDR,
 Geometry Nodes volume + SDF nodes, VFX Reference Platform 2025
 alignment). **4.5 LTS** is the last 4.x LTS (supported to July 2027) —
 the sensible pin for long-running pipelines. The **Extensions
@@ -119,8 +121,9 @@ bpy.context.collection.objects.link(obj)   # linking is explicit
 
 ## Boundaries with sibling skills
 
-- Live scene manipulation in THIS environment → `blender-toolkit`
-  plugin (operational layer).
+- Live scene manipulation → whatever Blender live-control tool (MCP
+  server/plugin) your environment provides, if any; not part of this
+  skill library.
 - Consuming exported assets: `threejs-development` (web),
   `unreal-engine-development`, `unity-development`,
   `godot-development`.

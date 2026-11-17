@@ -50,7 +50,7 @@ driven contracts.
 6. **Regression: test what broke.** Every fixed bug gets a test that fails on
    the old code and passes on the fix, so it can't silently return.
 7. **NFRs are requirements.** Performance, scalability and resilience targets
-   (SLIs/SLOs) are tested and gated, not hoped for — especially where a tender
+   (SLIs/SLOs) are tested and gated, not hoped for — especially where a contract
    specifies them.
 8. **Tests run in CI and gate merges.** A test suite that isn't enforced is
    documentation. Pipeline wiring → `devops-development`.
@@ -86,6 +86,17 @@ driven contracts.
 - **Snapshot tests over large blobs** — everyone rubber-stamps the update;
   snapshot small, meaningful structures only.
 - **Chasing a coverage number** instead of covering risk.
+- **Tests that cannot fail** — tautological assertions (`length >= 0`,
+  assertions inside `if`), fault injection that doesn't match real input,
+  stubs more permissive than the real tool. Make every new test fail once on
+  purpose before trusting it (`references/test-integrity.md`).
+- **SKIP counted as pass** — skipped means not run; report skips separately and
+  sum per-workspace totals yourself.
+- **Testing the wrong server** — Playwright `reuseExistingServer` latches onto
+  any app on the port; use a unique port with `strictPort`. `test-results/` is
+  wiped at the start of each run (`references/e2e-playwright.md`).
+- **Local green, CI red** — Vite loads `.env.local` under Vitest; diff the
+  environments first (`references/js-test-runner-pitfalls.md`).
 
 ## Workflow
 
@@ -104,16 +115,21 @@ driven contracts.
 Load on demand:
 
 - `references/test-strategy.md` — pyramid/trophy, what-to-test, test doubles, flakiness, coverage
-- `references/e2e-playwright.md` — locators, web-first assertions, fixtures, trace, projects, auth, CI
+- `references/test-integrity.md` — tests that cannot fail: tautologies, fault injection, SKIP ≠ pass, stubs, mutation discipline
+- `references/js-test-runner-pitfalls.md` — Vitest/jsdom/Windows traps: pools, env leakage, mocks, fake timers, workspaces
+- `references/e2e-playwright.md` — locators, web-first assertions, fixtures, trace, projects, ports/servers, CI
 - `references/load-performance.md` — k6, JMeter, Azure Load Testing; workload models, SLOs, fail criteria
 - `references/contract-regression.md` — consumer-driven contracts (Pact), regression discipline, snapshots
-- `references/test-data.md` — factories/fixtures, ephemeral deps (testcontainers), seeding, synthetic data
+- `references/test-data.md` — factories/fixtures, pinned time/ids, profile isolation, testcontainers, synthetic data
 
 ## Boundaries
 
 - **Per-language unit/integration mechanics** (test framework, mocking,
   assertions, running `pytest`/`dotnet test`/`vitest`) → the language skill
   (`python-development`, `dotnet-development`, `typescript-development`).
+  Exception: runner/environment traps that make a JS suite hang or lie
+  (Vitest pools, jsdom gaps, env leakage) live in
+  `references/js-test-runner-pitfalls.md`.
 - **Running tests in CI / pipelines** → `devops-development`.
 - **Accessibility testing** (axe, screen readers) → `accessibility-development`
   (testing-tooling). This skill's E2E reference cross-references it.

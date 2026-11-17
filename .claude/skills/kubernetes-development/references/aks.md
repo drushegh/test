@@ -29,9 +29,11 @@ know when operating on AKS. (Verify current defaults — AKS moves fast.)
   **Azure CNI (VNet-routable)** when pods must be addressable from the VNet/
   on-prem; **Cilium** data plane (eBPF) for performance + network policy +
   observability.
-- **App routing add-on** (managed NGINX, supports Gateway API) is the default
-  for HTTP/S ingress; **Istio add-on** for mesh/mTLS/canary; **Application
-  Gateway for Containers** for L7 + WAF.
+- **App routing add-on** for HTTP/S ingress — use its **Gateway API**
+  implementation for new work: its managed NGINX (Ingress API) mode tracks
+  the retired upstream ingress-nginx and is supported for critical security
+  patches only through November 2026 (migrate before then). **Istio add-on**
+  for mesh/mTLS/canary; **Application Gateway for Containers** for L7 + WAF.
 - Enable **NetworkPolicy** (Azure/Cilium or Calico); **LocalDNS** on node pools
   for DNS reliability; static egress (UDR + Azure Firewall) for controlled
   outbound.
@@ -43,8 +45,10 @@ know when operating on AKS. (Verify current defaults — AKS moves fast.)
 - Separate long-running and bursty workloads into different pools; **Spot**
   pools for interruptible work (with priority-expander/affinity).
 - Use **availability zones** (set at creation — can't change later); for
-  zonal balance with the autoscaler use one node pool per zone or
-  `--balance-similar-node-groups`.
+  zonal balance with the autoscaler use one node pool per zone, or set the
+  autoscaler profile key `balance-similar-node-groups=true`
+  (`az aks update --cluster-autoscaler-profile balance-similar-node-groups=true`
+  — it is a profile setting, not a standalone CLI flag).
 - **Cluster autoscaler / Node Auto-Provisioning** adds nodes for pending pods.
 
 ## Governance and security

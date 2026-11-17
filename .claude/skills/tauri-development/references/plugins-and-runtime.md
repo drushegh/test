@@ -29,21 +29,27 @@ be HTTPS.
 
 ```bash
 cargo tauri signer generate -w ~/.tauri/myapp.key   # private key + pubkey
-TAURI_SIGNING_PRIVATE_KEY=... cargo tauri build      # produces installer + .sig
+TAURI_SIGNING_PRIVATE_KEY=... TAURI_SIGNING_PRIVATE_KEY_PASSWORD=... cargo tauri build
+# produces the update bundle + .sig ONLY when createUpdaterArtifacts is set
 ```
 
 ```json
 // tauri.conf.json
 {
+  "bundle": { "createUpdaterArtifacts": true },
   "plugins": {
     "updater": {
-      "active": true,
-      "endpoints": ["https://your-server.com/update/{{target}}/{{current_version}}"],
-      "pubkey": "BASE64_PUBLIC_KEY"
+      "endpoints": ["https://your-server.com/update/{{target}}/{{arch}}/{{current_version}}"],
+      "pubkey": "CONTENT OF THE .pub FILE"
     }
   }
 }
 ```
+
+v2 has no `plugins.updater.active` key (that was v1's `tauri.updater.active`);
+the plugin is on once registered. Without `bundle.createUpdaterArtifacts`
+the build emits no `.sig` files. Use `"v1Compatible"` instead of `true`
+only while migrating v1 users.
 
 Server response shape:
 
@@ -76,6 +82,35 @@ async fn check_for_updates(app: tauri::AppHandle) -> Result<String, String> {
 
 Capability: `updater:default`. Private key never in the repo —
 `TAURI_SIGNING_PRIVATE_KEY` env in CI.
+
+Release traps:
+
+- GitHub's `releases/latest/download/latest.json` ignores **draft and
+  prerelease** releases, so the endpoint 404s until the release is
+  published as a full release.
+- Set `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` in CI even when the key has no
+  password (an empty value) — otherwise the build can stop at an
+  interactive password prompt and hang the job (observed; verify).
+- **Back up the private key.** Lose it and no installed copy can ever
+  accept an update again — users must reinstall manually.
+
+## Runtime Pitfalls
+
+- An `async` command that takes a `std::sync::Mutex` and does blocking
+  I/O stalls a Tokio worker; move the blocking section into
+  `tauri::async_runtime::spawn_blocking`.
+- `tokio::spawn` from the synchronous `setup()` closure panics with
+  "there is no reactor running"; use `tauri::async_runtime::spawn`, which
+  targets Tauri's runtime.
+- `cargo test` / `cargo build` in `src-tauri` while `tauri dev` runs
+  fights over the same target dir and can kill the dev chain; use a
+  separate `CARGO_TARGET_DIR` for side builds.
+- `npm install` while the Vite dev server runs can leave a white screen
+  from stale pre-bundled deps: stop dev, delete `node_modules/.vite`,
+  restart.
+- **Windows notifications are keyed by the app's AUMID**, which the
+  installer registers. Under `tauri dev` the notification call can return
+  `Ok` and show nothing; test toasts from an installed build (verify).
 
 ## System Tray (desktop-only)
 
@@ -120,12 +155,18 @@ varies by desktop environment.
 ```
 
 ```json
-// capability — note "sidecar": true
+// capability — "name" matches the externalBin entry; "sidecar": true
 { "permissions": [{
     "identifier": "shell:allow-execute",
-    "allow": [{ "name": "my-sidecar", "args": true, "sidecar": true }]
+    "allow": [{ "name": "binaries/my-sidecar", "sidecar": true,
+                "args": ["--flag", { "validator": "^[A-Za-z0-9._-]+$" }] }]
 }] }
 ```
+
+List the exact arguments the sidecar needs (fixed strings plus
+`validator` regexes for dynamic slots); `"args": true` lets the webview
+pass anything to the binary. `sidecar()` in Rust takes just the file
+name (`"my-sidecar"`), not the `externalBin` path.
 
 ```rust
 use tauri_plugin_shell::ShellExt;
@@ -157,8 +198,15 @@ platform manifests.
 Prefer the built-in `asset:` protocol over custom URI schemes:
 
 ```json
-{ "app": { "security": { "assetScope": ["$APPDATA/assets/**"] } } }
+{ "app": { "security": {
+    "assetProtocol": { "enable": true, "scope": ["$APPDATA/assets/**"] },
+    "csp": "default-src 'self'; img-src 'self' asset: http://asset.localhost"
+} } }
 ```
+
+v2 key is `assetProtocol` (`enable` + `scope`); v1's `assetScope` is gone.
+Needs the `protocol-asset` feature on the `tauri` crate, and the CSP must
+allow `asset:` and `http://asset.localhost`.
 
 ```typescript
 import { convertFileSrc } from "@tauri-apps/api/core";

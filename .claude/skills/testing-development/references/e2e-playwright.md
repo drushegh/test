@@ -89,10 +89,39 @@ export default defineConfig({
   (`--shard=1/4`). Retries mask flake — investigate retried tests, don't
   celebrate the green.
 
+## Dev servers, ports and output — make sure you test the right app
+
+- **`reuseExistingServer: true` latches onto whatever already listens on the
+  port.** On a shared default (Vite's 5173) the E2E run silently hit a
+  *different project's* dev server while build and unit tests were green. Give
+  each project a unique port, set Vite `server.port` with `strictPort: true` (it
+  fails instead of hopping to the next free port), and point
+  `webServer.port`/`url` and `baseURL` at the same value.
+- **`reuseExistingServer: false` throws if anything already listens** on the
+  port/url. Stop your own leftover preview/dev servers before
+  `npx playwright test`, and never "reuse" a stale preview, which serves an old
+  build.
+- **`outputDir` (default `test-results/`) is cleaned at the start of every
+  run.** Screenshots or receipts saved there by an earlier step vanish. Keep
+  review captures outside it (a scratch dir), or capture after the E2E run.
+
+## Navigation in SPAs
+
+In a hash-router SPA, navigate with `page.goto('/#/route')` rather than clicking
+tab components to reach a view: clicks on tab widgets can race the framework's
+state update. Keep the click for tests whose subject *is* the tab interaction.
+
+## Test the populated, mounted app
+
+E2E and visual checks against an empty shell prove little. Seed realistic
+fixtures, and assert against the real mount path of the running app rather than
+an isolated harness (→ `test-integrity.md`, `ui-verification`).
+
 ## In CI and adjacent concerns
 
-Install only the needed browsers (`npx playwright install --with-deps
-chromium`); publish the HTML report and traces as artefacts. Pipeline wiring →
-`devops-development`. For **accessibility** assertions beyond the ARIA
-snapshot (axe-core, screen-reader checks) → `accessibility-development`. Test
+Install only the browsers your `projects` use (`npx playwright install
+--with-deps chromium webkit` for the config above — a project whose browser
+isn't installed fails at launch); publish the HTML report and traces as
+artefacts. Pipeline wiring → `devops-development`. For **accessibility**
+assertions beyond the ARIA snapshot (axe-core, screen-reader checks) → `accessibility-development`. Test
 *data* setup → `test-data.md`.

@@ -22,6 +22,67 @@ load update_helpers
   [[ "$output" == *"path(s) updated"* ]]
 }
 
+@test "apply-update: file nested under a dir-mirror entry updates cleanly, no cannot-stat (BUG-003)" {
+  # The fixture manifest lists owned/nested.sh as a FILE under the owned/
+  # dir-mirror — the shape of the real migrate-layout.sh-under-update/ entry.
+  # Pre-fix, the dir's `mv` moved the staged subtree first, so the nested
+  # file entry's `mv` hit "cannot stat" and aborted with a half-applied tree.
+  build_upstream
+  build_consumer
+  run apply_update
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"cannot stat"* ]]
+  [[ "$output" != *"failed swapping"* ]]
+  # The nested file still ships (via the dir mirror) and is updated to v2.
+  grep -q "nested v2" "$CONSUMER/.claude/framework/owned/nested.sh"
+  # And the rest of the mirror landed too (not left half-applied).
+  grep -q "owned v2" "$CONSUMER/.claude/framework/owned/file.txt"
+}
+
+@test "apply-update: FRAMEWORK_SOURCE_SUBDIR sources canonical from the subdir (TASK-054)" {
+  build_upstream_subdir "02_solution"     # canonical under 02_solution/
+  build_consumer                          # consumer root has no subdir
+  set_version_field FRAMEWORK_SOURCE_SUBDIR "02_solution"
+  run apply_update
+  [ "$status" -eq 0 ]
+  # Files mirror from upstream 02_solution/.claude/... INTO consumer .claude/... (no subdir).
+  grep -q "owned v2" "$CONSUMER/.claude/framework/owned/file.txt"
+  [ -f "$CONSUMER/.claude/framework/owned/new-in-v2.txt" ]
+  grep -q "rules v2" "$CONSUMER/CLAUDE.framework.md"
+  [ ! -d "$CONSUMER/02_solution" ]        # subdir is a SOURCE concept, not copied verbatim
+  grep -q "FRAMEWORK_PINNED_SHA=$UPSTREAM_V2_SHA" "$CVERSION"
+}
+
+@test "apply-update: empty FRAMEWORK_SOURCE_SUBDIR behaves as repo root (back-compat)" {
+  build_upstream                          # canonical at root
+  build_consumer
+  set_version_field FRAMEWORK_SOURCE_SUBDIR ""
+  run apply_update
+  [ "$status" -eq 0 ]
+  grep -q "owned v2" "$CONSUMER/.claude/framework/owned/file.txt"
+  grep -q "rules v2" "$CONSUMER/CLAUDE.framework.md"
+}
+
+@test "apply-update: FRAMEWORK_SOURCE_SUBDIR absent upstream fails cleanly (no half-update)" {
+  build_upstream                          # canonical at ROOT — no 02_solution subdir
+  build_consumer
+  set_version_field FRAMEWORK_SOURCE_SUBDIR "02_solution"
+  run apply_update
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"not found in upstream clone"* ]]
+  # Tree untouched: still v1.
+  grep -q "owned v1" "$CONSUMER/.claude/framework/owned/file.txt"
+}
+
+@test "apply-update: subdir-sourcing consumer pulls from the subdir canonical" {
+  build_upstream_subdir "02_solution"
+  build_consumer
+  set_version_field FRAMEWORK_SOURCE_SUBDIR "02_solution"
+  run apply_update
+  [ "$status" -eq 0 ]
+  grep -q "owned v2" "$CONSUMER/.claude/framework/owned/file.txt"
+}
+
 @test "apply-update: pin + LAST_CHECKED rewritten, pending flag cleared" {
   build_upstream
   build_consumer
@@ -29,7 +90,7 @@ load update_helpers
   run apply_update
   [ "$status" -eq 0 ]
   grep -q "^FRAMEWORK_PINNED_SHA=$UPSTREAM_V2_SHA" "$CVERSION"
-  ! grep -q "1970-01-01" "$CVERSION"
+  ! grep -q "1970-01-01" "$CVERSION" || false
   [ ! -f "$CFLAG" ]
 }
 
@@ -83,6 +144,68 @@ load update_helpers
   grep -q "owned v1" "$CONSUMER/.claude/framework/owned/file.txt"
 }
 
+@test "apply-update: untracked content at a path NEW in this update refuses, content intact (audit C1)" {
+  build_upstream
+  build_consumer
+  # Upstream introduces a brand-new manifest path in a v3 commit — NOT
+  # present in the consumer's LOCAL manifest (pinned at v1, which only
+  # lists the original fixture entries). Pre-fix, the pre-flight
+  # dirty-check iterated only the local manifest built BEFORE the fetch,
+  # so a path new-in-this-update got zero dirty-check at all: Phase 2
+  # would rm -rf whatever sat there with no warning.
+  mkdir -p "$UPSTREAM/.claude/framework/new-feature"
+  echo "new feature content" > "$UPSTREAM/.claude/framework/new-feature/file.txt"
+  echo ".claude/framework/new-feature/" >> "$UPSTREAM/.claude/framework/update/framework-manifest.txt"
+  git -C "$UPSTREAM" add -A
+  git -C "$UPSTREAM" commit -qm "v3: introduce a new framework-owned dir"
+
+  # Consumer has pre-existing UNTRACKED content sitting at that exact
+  # brand-new path (e.g. their own scratch notes, never committed).
+  mkdir -p "$CONSUMER/.claude/framework/new-feature"
+  echo "my untracked notes" > "$CONSUMER/.claude/framework/new-feature/mine.txt"
+
+  run apply_update
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"refusing"* ]]
+  [[ "$output" == *"new-feature"* ]]
+  # Untracked content survives — the run aborted before Phase 1/2 ever ran.
+  grep -q "my untracked notes" "$CONSUMER/.claude/framework/new-feature/mine.txt"
+  # Nothing else changed either — still pinned at v1.
+  grep -q "^FRAMEWORK_PINNED_SHA=$UPSTREAM_V1_SHA" "$CVERSION"
+}
+
+@test "apply-update: refuses in a non-git project unless --no-git is passed (audit minor d)" {
+  build_upstream
+  build_consumer
+  rm -rf "$CONSUMER/.git"
+  run apply_update_noconfirm
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"not a git repository"* ]]
+  # Nothing touched.
+  grep -q "owned v1" "$CONSUMER/.claude/framework/owned/file.txt"
+}
+
+@test "apply-update: --no-git proceeds (with warning) in a non-git project" {
+  build_upstream
+  build_consumer
+  rm -rf "$CONSUMER/.git"
+  run apply_update_noconfirm --yes --no-git
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"WARNING"* ]]
+  [[ "$output" == *"WITHOUT git"* ]]
+  grep -q "owned v2" "$CONSUMER/.claude/framework/owned/file.txt"
+}
+
+@test "apply-update: non-interactive run without --yes refuses, nothing changed (audit minor e)" {
+  build_upstream
+  build_consumer
+  run apply_update_noconfirm   # no --yes, bats stdin is not a tty
+  [ "$status" -eq 4 ]
+  [[ "$output" == *"--yes"* ]]
+  grep -q "owned v1" "$CONSUMER/.claude/framework/owned/file.txt"
+  grep -q "^FRAMEWORK_PINNED_SHA=$UPSTREAM_V1_SHA" "$CVERSION"
+}
+
 @test "apply-update: missing upstream manifest warns loudly and falls back to local (DA-M5)" {
   build_upstream --no-manifest
   build_consumer
@@ -112,7 +235,7 @@ load update_helpers
   grep -q "hook v1"  "$CONSUMER/.claude/hooks/sample-hook.sh"
   grep -q "^FRAMEWORK_PINNED_SHA=$UPSTREAM_V1_SHA" "$CVERSION"
   # trap cleanup removed the staging dir
-  ! ls "$CONSUMER/.claude"/.update-staging.* 2>/dev/null
+  ! ls "$CONSUMER/.claude"/.update-staging.* 2>/dev/null || false
 }
 
 @test "apply-update: customised command file → loud collision notice (TASK-039)" {
@@ -125,10 +248,84 @@ load update_helpers
   git -C "$CONSUMER" commit -qm "local custom command"
   run apply_update
   [ "$status" -eq 0 ]
-  [[ "$output" == *"COMMAND COLLISION"* ]]
+  [[ "$output" == *"FILE COLLISION"* ]]
   [[ "$output" == *".claude/commands/wrapup.md"* ]]
   # Overwrite still happened (manifest paths are framework-owned).
   grep -q "wrapup command v2" "$CONSUMER/.claude/commands/wrapup.md"
+}
+
+@test "apply-update: customised CLAUDE.framework.md → loud collision notice (TASK-045)" {
+  build_upstream
+  build_consumer
+  # Consumer edited the framework rulebook directly (committed) instead of
+  # putting project rules in CLAUDE.md — would be silently overwritten.
+  echo "MY CUSTOM framework rules" > "$CONSUMER/CLAUDE.framework.md"
+  git -C "$CONSUMER" add -A
+  git -C "$CONSUMER" commit -qm "local custom framework rules"
+  run apply_update
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"FILE COLLISION"* ]]
+  [[ "$output" == *"CLAUDE.framework.md"* ]]
+  # Overwrite still happened (manifest paths are framework-owned).
+  grep -q "rules v2" "$CONSUMER/CLAUDE.framework.md"
+}
+
+@test "apply-update: customised hook file → loud collision notice (audit M2)" {
+  build_upstream
+  build_consumer
+  # Consumer hardened a hook (e.g. exactly the kind of fix M1 in the audit
+  # recommends for block-dangerous-commands.py) and committed it — the
+  # dirty-check passes, so pre-fix this was silently reverted with NO
+  # warning at all (the collision `case` excluded .claude/hooks/*).
+  echo "MY HARDENED hook logic" > "$CONSUMER/.claude/hooks/sample-hook.sh"
+  git -C "$CONSUMER" add -A
+  git -C "$CONSUMER" commit -qm "local hook hardening"
+  run apply_update
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"FILE COLLISION"* ]]
+  [[ "$output" == *".claude/hooks/sample-hook.sh"* ]]
+  # Overwrite still happens (manifest paths are framework-owned) — the fix
+  # is the WARNING, not preventing the overwrite (that's the collision
+  # model already accepted for commands/CLAUDE.framework.md).
+  grep -q "hook v2" "$CONSUMER/.claude/hooks/sample-hook.sh"
+}
+
+@test "apply-update: rollback handler restores a half-applied tree (audit minor f, unit-level)" {
+  build_upstream
+  build_consumer
+  # Simulate a mid-Phase-2 interruption: one dir-mirror file overwritten,
+  # one extra file landed inside the mirror (present upstream, absent at
+  # HEAD), one shared-dir file entry overwritten. Live signal delivery is
+  # not reliable in this environment, so invoke the shipped
+  # _rollback_framework_paths function VERBATIM (extracted from
+  # apply-update.sh) — the same code path both swap_fail and the INT/TERM
+  # trap execute.
+  echo "half-applied v2"  > "$CONSUMER/.claude/framework/owned/file.txt"
+  echo "new upstream file" > "$CONSUMER/.claude/framework/owned/new-in-v2.txt"
+  echo "half-applied hook" > "$CONSUMER/.claude/hooks/sample-hook.sh"
+  run bash -c '
+    cd "'"$CONSUMER"'" || exit 1
+    set -uo pipefail
+    PROJECT_ROOT="$PWD"
+    declare -A final_type=(
+      [".claude/framework/owned"]="dir"
+      [".claude/hooks/sample-hook.sh"]="file"
+    )
+    final_paths=(".claude/framework/owned" ".claude/hooks/sample-hook.sh")
+    source <(sed -n "/^_rollback_framework_paths()/,/^}/p" .claude/framework/update/apply-update.sh)
+    declare -F _rollback_framework_paths >/dev/null || { echo "extract failed"; exit 1; }
+    _rollback_framework_paths
+  '
+  [ "$status" -eq 0 ]
+  # Tracked content restored to HEAD...
+  grep -q "owned v1" "$CONSUMER/.claude/framework/owned/file.txt"
+  grep -q "hook v1"  "$CONSUMER/.claude/hooks/sample-hook.sh"
+  # ...the mirror-only stray file is cleaned (dir mirrors are 100%
+  # framework-owned)...
+  [ ! -e "$CONSUMER/.claude/framework/owned/new-in-v2.txt" ]
+  # ...and the project-owned sibling in the SHARED hooks dir is untouched
+  # (git clean must never run on file entries / shared dirs).
+  grep -q "must survive" "$CONSUMER/.claude/hooks/project-hook.sh"
 }
 
 @test "apply-update: stock command file evolving upstream → NO collision noise (TASK-039)" {
@@ -136,7 +333,7 @@ load update_helpers
   build_consumer
   run apply_update
   [ "$status" -eq 0 ]
-  [[ "$output" != *"COMMAND COLLISION"* ]]
+  [[ "$output" != *"FILE COLLISION"* ]]
   grep -q "wrapup command v2" "$CONSUMER/.claude/commands/wrapup.md"
 }
 
@@ -146,6 +343,59 @@ load update_helpers
   rm "$CVERSION"
   run apply_update
   [ "$status" -eq 2 ]
+}
+
+@test "apply-update: CRLF .framework-version is sourced cleanly, not treated as broken (Phase-B, DA-M12)" {
+  build_upstream
+  build_consumer
+  # Simulate a Windows checkout with no eol=lf: rewrite the version file CRLF.
+  # Sourcing it raw would leave \r on every value; the tr-strip source must
+  # keep the URL/branch/sha usable.
+  sed 's/$/\r/' "$CVERSION" > "$CVERSION.crlf" && mv "$CVERSION.crlf" "$CVERSION"
+  run apply_update
+  [ "$status" -eq 0 ]
+  grep -q "owned v2" "$CONSUMER/.claude/framework/owned/file.txt"
+  grep -q "^FRAMEWORK_PINNED_SHA=$UPSTREAM_V2_SHA" "$CVERSION"
+}
+
+@test "apply-update: LOCAL manifest entry escaping the project root is rejected before any change (Phase-B)" {
+  build_upstream
+  build_consumer
+  echo "../../../etc/evil" >> "$CONSUMER/.claude/framework/update/framework-manifest.txt"
+  git -C "$CONSUMER" add -A
+  git -C "$CONSUMER" commit -qm "poisoned local manifest"
+  run apply_update
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"escapes the project root"* ]]
+  # Refused before fetch/stage/swap — still pinned at v1, tree untouched.
+  grep -q "owned v1" "$CONSUMER/.claude/framework/owned/file.txt"
+  grep -q "^FRAMEWORK_PINNED_SHA=$UPSTREAM_V1_SHA" "$CVERSION"
+}
+
+@test "apply-update: LOCAL manifest entry using backslash (Windows) traversal is rejected before any change (Phase-B)" {
+  build_upstream
+  build_consumer
+  echo 'a\..\evil' >> "$CONSUMER/.claude/framework/update/framework-manifest.txt"
+  git -C "$CONSUMER" add -A
+  git -C "$CONSUMER" commit -qm "poisoned local manifest (backslash traversal)"
+  run apply_update
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"escapes the project root"* ]]
+  # Refused before fetch/stage/swap — still pinned at v1, tree untouched.
+  grep -q "owned v1" "$CONSUMER/.claude/framework/owned/file.txt"
+  grep -q "^FRAMEWORK_PINNED_SHA=$UPSTREAM_V1_SHA" "$CVERSION"
+}
+
+@test "apply-update: UPSTREAM manifest entry with an absolute path is rejected (Phase-B)" {
+  build_upstream
+  echo "/etc/evil" >> "$UPSTREAM/.claude/framework/update/framework-manifest.txt"
+  git -C "$UPSTREAM" add -A
+  git -C "$UPSTREAM" commit -qm "poisoned upstream manifest"
+  build_consumer
+  run apply_update
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"escapes the project root"* ]]
+  grep -q "owned v1" "$CONSUMER/.claude/framework/owned/file.txt"
 }
 
 # --- check-updates.sh -------------------------------------------------
@@ -190,7 +440,7 @@ load update_helpers
   run check_updates
   [ "$status" -eq 0 ]
   [ ! -f "$CFLAG" ]
-  ! grep -q "1970-01-01" "$CVERSION"
+  ! grep -q "1970-01-01" "$CVERSION" || false
 }
 
 @test "check-updates: update available writes a sane flag file" {
@@ -203,6 +453,47 @@ load update_helpers
   grep -q "${UPSTREAM_V2_SHA:0:7}" "$CFLAG"
   grep -q "v2: framework changes" "$CFLAG"
   grep -q "## To apply" "$CFLAG"
+}
+
+@test "check-updates: CRLF .framework-version is sourced cleanly (no false 'offline', Phase-B)" {
+  build_upstream
+  build_consumer
+  # A raw source would leave a trailing \r on the URL, so `ls-remote "url\r"`
+  # would fail and the script would wrongly report offline (exit 3). The
+  # tr-strip source must parse the local-path upstream correctly and detect the
+  # available update.
+  sed 's/$/\r/' "$CVERSION" > "$CVERSION.crlf" && mv "$CVERSION.crlf" "$CVERSION"
+  run check_updates
+  [ "$status" -eq 0 ]
+  [ -f "$CFLAG" ]
+}
+
+@test "check-updates: SHA advanced but no framework paths changed — up to date, no flag (BUG-004)" {
+  build_upstream
+  # v3: a commit touching ONLY a non-manifest (non-shipped) path — mirrors an
+  # upstream that commits its own dev board / docs to the branch consumers track.
+  echo "dev board note" > "$UPSTREAM/DEV-NOTES.md"
+  git -C "$UPSTREAM" add -A
+  git -C "$UPSTREAM" commit -qm "v3: non-shipped dev-board change only"
+  build_consumer
+  set_version_field FRAMEWORK_PINNED_SHA "$UPSTREAM_V2_SHA"   # pinned current on all framework files
+  run check_updates
+  [ "$status" -eq 0 ]
+  [ ! -f "$CFLAG" ]                                           # no spurious "update available" flag
+  [[ "$output" == *"no framework-owned files changed"* ]]
+}
+
+@test "check-updates: empty-diff suppression also clears a STALE flag (BUG-004)" {
+  build_upstream
+  echo "dev board note" > "$UPSTREAM/DEV-NOTES.md"
+  git -C "$UPSTREAM" add -A
+  git -C "$UPSTREAM" commit -qm "v3: non-shipped dev-board change only"
+  build_consumer
+  set_version_field FRAMEWORK_PINNED_SHA "$UPSTREAM_V2_SHA"
+  echo "stale flag from an old check" > "$CFLAG"             # a flag left over from before
+  run check_updates
+  [ "$status" -eq 0 ]
+  [ ! -f "$CFLAG" ]                                           # suppression must also clear it
 }
 
 # --- migrate-layout.sh ------------------------------------------------
@@ -238,7 +529,7 @@ load update_helpers
   [ ! -f "$OLDC/.framework-version" ]; [ -f "$OLDC/.claude/.framework-version" ]
   # Reference rewrites
   grep -q ".claude/framework/" "$OLDC/CLAUDE.md"
-  ! grep -q "00_framework" "$OLDC/CLAUDE.md"
+  ! grep -q "00_framework" "$OLDC/CLAUDE.md" || false
   grep -q ".claude/.framework-update-available.md" "$OLDC/.gitignore"
   grep -q ".claude/framework/self/README.md" "$OLDC/.gitignore"
   # Migration commit exists
@@ -263,8 +554,8 @@ load update_helpers
   run migrate_layout
   [ "$status" -eq 0 ]
   # Not in the migration commit, not tracked, still on disk.
-  ! git -C "$OLDC" show --name-only --format= HEAD | grep -q ".env.local"
-  ! git -C "$OLDC" ls-files | grep -q ".env.local"
+  ! git -C "$OLDC" show --name-only --format= HEAD | grep -q ".env.local" || false
+  ! git -C "$OLDC" ls-files | grep -q ".env.local" || false
   [ -f "$OLDC/.env.local" ]
 }
 
@@ -279,6 +570,97 @@ load update_helpers
   [ -d "$OLDC/00_framework" ]
 }
 
+@test "migrate-layout: dirty-check also covers CLAUDE.md / CLAUDE.framework.md / .gitignore (audit M3a)" {
+  build_old_layout_consumer full
+  echo "uncommitted CLAUDE.md edit" >> "$OLDC/CLAUDE.md"
+  run migrate_layout
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"uncommitted changes"* ]]
+  [ -d "$OLDC/00_framework" ]
+}
+
+@test "migrate-layout: BARE and backticked 00_framework/ references BOTH rewritten on confirm; diff lists the file (audit M3, corrected)" {
+  build_old_layout_consumer full
+  # Fixture CLAUDE.md (see update_helpers.bash) is legacy ground truth:
+  # one BARE reference, one backticked, one plain-prose mention. The
+  # regression being pinned: a backtick-anchored sed under-matched and
+  # silently left the bare shapes stale in a file the agent loads at cold
+  # start. Token-boundary matching must rewrite all three.
+  run migrate_layout   # --yes (helper default) = the confirmed path
+  [ "$status" -eq 0 ]
+  # Bare reference rewritten (no backtick added — content otherwise intact).
+  grep -q '^See .claude/framework/self/README.md$' "$OLDC/CLAUDE.md"
+  # Backticked reference rewritten, backticks preserved.
+  grep -q 'Read `.claude/framework/insights/notes.txt`' "$OLDC/CLAUDE.md"
+  # Prose mention rewritten too — by design: sed cannot tell it apart, and
+  # the adopter explicitly confirmed after seeing the diff.
+  grep -q 'the .claude/framework/ layout held these files' "$OLDC/CLAUDE.md"
+  ! grep -q "00_framework" "$OLDC/CLAUDE.md" || false
+  # The pre-commit diff listed CLAUDE.md as a change (shown before the gate).
+  [[ "$output" == *"CLAUDE.md"* ]]
+  [[ "$output" == *"will be committed"* ]]
+}
+
+@test "migrate-layout: word-boundary sed does not rewrite substrings of longer tokens (audit M3, corrected)" {
+  build_old_layout_consumer full
+  # A longer token CONTAINING "00_framework/" must not be corrupted: the
+  # boundary anchor only fires when 00_framework starts its own token.
+  printf 'See 00_framework/self/README.md\nKeep my00_framework/ and legacy00_framework/ verbatim.\n' > "$OLDC/CLAUDE.md"
+  git -C "$OLDC" add CLAUDE.md
+  git -C "$OLDC" commit -qm "seed CLAUDE.md with embedded-token mentions"
+  run migrate_layout
+  [ "$status" -eq 0 ]
+  grep -q '^See .claude/framework/self/README.md$' "$OLDC/CLAUDE.md"
+  grep -q 'Keep my00_framework/ and legacy00_framework/ verbatim.' "$OLDC/CLAUDE.md"
+}
+
+@test "migrate-layout: non-interactive without --yes/--stage-only refuses at ENTRY, tree untouched (audit M3/e)" {
+  build_old_layout_consumer full
+  cp "$OLDC/CLAUDE.md" "$BATS_TEST_TMPDIR/claude-md.orig"
+  # No flag, and bats' stdin is not a tty → the entry gate must refuse
+  # BEFORE any mutation: no mvs, no seds, nothing staged. (An earlier
+  # design gated only the commit, which left a non-interactive caller with
+  # a half-consented, mutated tree.)
+  run migrate_layout_noconfirm
+  [ "$status" -eq 4 ]
+  [[ "$output" == *"Nothing was changed"* ]]
+  [[ "$output" == *"--yes"* ]]
+  # Tree byte-for-byte untouched: old layout still in place...
+  [ -d "$OLDC/00_framework" ]
+  [ -f "$OLDC/TASKS.md" ]
+  cmp -s "$BATS_TEST_TMPDIR/claude-md.orig" "$OLDC/CLAUDE.md"
+  # ...and the index/worktree entirely clean (fixture starts committed-clean).
+  [ -z "$(git -C "$OLDC" status --porcelain)" ]
+  ! git -C "$OLDC" log --oneline | grep -q "layout migration" || false
+}
+
+@test "migrate-layout: decline semantics via --stage-only — coherent migration staged, references rewritten, nothing committed (audit M3, corrected)" {
+  build_old_layout_consumer full
+  # --stage-only shares the exact no-commit code path (_print_staged_notice
+  # + skip-commit) that an interactive decline takes; only the read/case of
+  # the prompt itself is untestable here (no pty tool in this environment:
+  # winpty refuses piped stdin; script/socat/expect absent). The declined
+  # tree must be INTERNALLY COHERENT: moves AND rewrites together — never
+  # restored references pointing at directories that have physically moved.
+  run migrate_layout_noconfirm --stage-only
+  [ "$status" -eq 0 ]
+  # Dirs moved...
+  [ ! -d "$OLDC/00_framework" ]
+  [ -f "$OLDC/.claude/framework/insights/notes.txt" ]
+  [ ! -f "$OLDC/TASKS.md" ]; [ -f "$OLDC/.claude/TASKS.md" ]
+  # ...references REWRITTEN (bare + backticked; no stale refs anywhere)...
+  grep -q '^See .claude/framework/self/README.md$' "$OLDC/CLAUDE.md"
+  grep -q 'Read `.claude/framework/insights/notes.txt`' "$OLDC/CLAUDE.md"
+  ! grep -q "00_framework" "$OLDC/CLAUDE.md" || false
+  # ...everything staged, including the rewritten CLAUDE.md...
+  git -C "$OLDC" diff --cached --name-only | grep -qx "CLAUDE.md"
+  ( cd "$OLDC" && ! git diff --cached --quiet )
+  # ...nothing committed, and the staged-review notice was printed.
+  ! git -C "$OLDC" log --oneline | grep -q "layout migration" || false
+  [[ "$output" == *"nothing was committed"* ]]
+  [[ "$output" == *"git diff --staged"* ]]
+}
+
 # --- doctor.sh --------------------------------------------------------
 
 @test "doctor: clean tree is silent (exit 0, no findings flag)" {
@@ -289,7 +671,7 @@ load update_helpers
   # Tolerate environment-dependent findings (gnu-toolchain WARNING on
   # BSD/macOS, jq-missing INFO) — but never a CRITICAL.
   if [ -f "$DOCFLAG" ]; then
-    ! grep -q "CRITICAL" "$DOCFLAG"
+    ! grep -q "CRITICAL" "$DOCFLAG" || false
   fi
   if command -v jq >/dev/null 2>&1 && sed --version 2>/dev/null | grep -q GNU; then
     [ ! -f "$DOCFLAG" ]
@@ -306,7 +688,7 @@ load update_helpers
   run run_doctor
   [ "$status" -eq 0 ]
   if [ -f "$DOCFLAG" ]; then
-    ! grep -q "child-hook.sh" "$DOCFLAG"
+    ! grep -q "child-hook.sh" "$DOCFLAG" || false
   fi
 }
 
@@ -381,6 +763,261 @@ GOTCHA
   run run_doctor
   [ "$status" -eq 0 ]
   if [ -f "$DOCFLAG" ]; then
-    ! grep -q "state-files" "$DOCFLAG"
+    ! grep -q "state-files" "$DOCFLAG" || false
   fi
+}
+
+# --- doctor Check 13: state-file structural grammar -------------------
+
+@test "doctor Check 13: valid framework-convention state files are silent (control)" {
+  build_doctor_consumer
+  seed_doctor_state_files
+  run run_doctor
+  [ "$status" -eq 0 ]
+  if [ -f "$DOCFLAG" ]; then ! grep -q "state-structure" "$DOCFLAG" || false; fi
+}
+
+@test "doctor Check 13: bracketed IDs in their lane are clean (control)" {
+  build_doctor_consumer
+  cat > "$DOC/.claude/TASKS.md" <<'EOF'
+# Task Board
+## Feature Lane
+### Verify
+### Done
+#### [TASK-1] bracketed feature
+## Bug-Fix Lane
+### Done
+#### [BUG-1] bracketed bug
+EOF
+  run run_doctor
+  [ "$status" -eq 0 ]
+  if [ -f "$DOCFLAG" ]; then ! grep -q "state-structure" "$DOCFLAG" || false; fi
+}
+
+@test "doctor Check 13: bare (unbracketed) IDs → WARNING [state-structure]" {
+  build_doctor_consumer
+  cat > "$DOC/.claude/TASKS.md" <<'EOF'
+# Task Board
+## Feature Lane
+### Verify
+### Done
+#### TASK-2 — bare feature
+## Bug-Fix Lane
+### Done
+#### BUG-2 — bare bug
+EOF
+  run run_doctor
+  [ "$status" -eq 0 ]
+  grep -q 'BARE IDs' "$DOCFLAG"
+  grep -q 'task/bug entries with BARE IDs' "$DOCFLAG"
+}
+
+@test "doctor Check 13: Feature lane without a ### Verify section → WARNING" {
+  build_doctor_consumer
+  cat > "$DOC/.claude/TASKS.md" <<'EOF'
+# Task Board
+## Feature Lane
+### Ready for Test
+### Done
+#### [TASK-1] a feature
+## Bug-Fix Lane
+### Verify
+### Done
+EOF
+  run run_doctor
+  [ "$status" -eq 0 ]
+  grep -q 'no .### Verify. section' "$DOCFLAG"
+}
+
+@test "doctor Check 13: a ### Verify in the BUG lane does NOT satisfy the Feature-lane check" {
+  build_doctor_consumer
+  # Verify exists, but only in the bug lane — the feature lane still lacks it.
+  cat > "$DOC/.claude/TASKS.md" <<'EOF'
+# Task Board
+## Feature Lane
+### Done
+#### [TASK-1] a feature
+## Bug-Fix Lane
+### Verify
+### Done
+EOF
+  run run_doctor
+  [ "$status" -eq 0 ]
+  grep -q 'Feature lane has no .### Verify' "$DOCFLAG"
+}
+
+@test "doctor Check 13: BUG-* under the Feature lane → WARNING [state-structure]" {
+  build_doctor_consumer
+  cat > "$DOC/.claude/TASKS.md" <<'EOF'
+# Task Board
+## Feature Lane
+### In Progress
+### Verify
+#### [BUG-009] misfiled bug under the feature lane [P1]
+## Bug-Fix Lane
+### Done
+EOF
+  run run_doctor
+  [ "$status" -eq 0 ]
+  grep -q '\[state-structure\]' "$DOCFLAG"
+  grep -q 'BUG-009 sits under the Feature lane' "$DOCFLAG"
+}
+
+@test "doctor Check 13: TASK-* under the Bug-Fix lane → WARNING [state-structure]" {
+  build_doctor_consumer
+  cat > "$DOC/.claude/TASKS.md" <<'EOF'
+# Task Board
+## Feature Lane
+### Verify
+### Done
+## Bug-Fix Lane
+### Verify
+#### [TASK-009] misfiled task under the bug lane [P1]
+EOF
+  run run_doctor
+  [ "$status" -eq 0 ]
+  grep -q 'TASK-009 sits under the Bug-Fix lane' "$DOCFLAG"
+}
+
+@test "doctor Check 13: DECISIONS heading neither ISO-date nor DEC-N → WARNING" {
+  build_doctor_consumer
+  printf '# Decision Log\n\n## Some prose title with no id or date\n\nbody\n' > "$DOC/.claude/DECISIONS.md"
+  run run_doctor
+  [ "$status" -eq 0 ]
+  grep -q 'neither date-headed' "$DOCFLAG"
+}
+
+@test "doctor Check 13: DECISIONS DEC-N and ISO-date headings are both accepted (control)" {
+  build_doctor_consumer
+  printf '# Decision Log\n\n## DEC-007 — a dec-n decision\n\nbody\n\n## 2026-06-26 — a date-headed decision\n\nbody\n' > "$DOC/.claude/DECISIONS.md"
+  run run_doctor
+  [ "$status" -eq 0 ]
+  if [ -f "$DOCFLAG" ]; then ! grep -q "state-structure" "$DOCFLAG" || false; fi
+}
+
+@test "doctor Check 13: task ID at heading level 3 → WARNING (entry would vanish)" {
+  build_doctor_consumer
+  cat > "$DOC/.claude/TASKS.md" <<'EOF'
+# Task Board
+## Feature Lane
+### In Progress
+### [TASK-5] this should be a level-4 heading
+## Bug-Fix Lane
+### Done
+EOF
+  run run_doctor
+  [ "$status" -eq 0 ]
+  grep -q 'heading level 3' "$DOCFLAG"
+}
+
+@test "doctor Check 13: status section before any lane heading → WARNING" {
+  build_doctor_consumer
+  cat > "$DOC/.claude/TASKS.md" <<'EOF'
+# Task Board
+### Todo (Priority Order)
+#### TASK-001 — orphan task above the lane
+## Feature Lane
+### Done
+## Bug-Fix Lane
+### Done
+EOF
+  run run_doctor
+  [ "$status" -eq 0 ]
+  grep -q 'before the first' "$DOCFLAG"
+}
+
+@test "doctor Check 13: missing Feature Lane heading → WARNING" {
+  build_doctor_consumer
+  cat > "$DOC/.claude/TASKS.md" <<'EOF'
+# Task Board
+## Bug-Fix Lane
+### Reported
+#### BUG-001 — a bug
+### Done
+EOF
+  run run_doctor
+  [ "$status" -eq 0 ]
+  grep -q 'no .## Feature Lane' "$DOCFLAG"
+}
+
+@test "doctor Check 13: commented-out template heading is NOT flagged (comment-aware)" {
+  build_doctor_consumer
+  cat > "$DOC/.claude/TASKS.md" <<'EOF'
+# Task Board
+## Feature Lane
+### Verify
+### Done
+## Bug-Fix Lane
+### Reported
+<!--
+#### [BUG-XXX] Short description
+-->
+### Done
+EOF
+  run run_doctor
+  [ "$status" -eq 0 ]
+  if [ -f "$DOCFLAG" ]; then ! grep -q "state-structure" "$DOCFLAG" || false; fi
+}
+
+@test "doctor Check 13: DECISIONS meta line with a hyphen instead of the middot → WARNING" {
+  build_doctor_consumer
+  printf '# Decision Log\n\n## DEC-001 — A decision\n\n**Date:** 2026-06-26 - **Status:** active\n' > "$DOC/.claude/DECISIONS.md"
+  run run_doctor
+  [ "$status" -eq 0 ]
+  grep -q 'middot' "$DOCFLAG"
+}
+
+@test "doctor Check 13: DECISIONS meta line WITH the middot is accepted (control)" {
+  build_doctor_consumer
+  printf '# Decision Log\n\n## DEC-001 — A decision\n\n**Date:** 2026-06-26 · **Status:** active\n' > "$DOC/.claude/DECISIONS.md"
+  run run_doctor
+  [ "$status" -eq 0 ]
+  if [ -f "$DOCFLAG" ]; then ! grep -q "state-structure" "$DOCFLAG" || false; fi
+}
+
+@test "doctor Check 13: GOTCHAS single-asterisk Confidence marker → WARNING" {
+  build_doctor_consumer
+  printf '# Gotchas\n\n## Cat\n\n### Entry\n\n*Confidence:* Verified\n' > "$DOC/.claude/GOTCHAS.md"
+  run run_doctor
+  [ "$status" -eq 0 ]
+  grep -q 'Confidence marker' "$DOCFLAG"
+}
+
+@test "doctor Check 13: GOTCHAS Count line missing the middot → WARNING" {
+  build_doctor_consumer
+  printf '# Gotchas\n\n## Cat\n\n### Entry\n\n**Confidence:** Verified\n\nCount: 3 - First seen: 2026-06-26\n' > "$DOC/.claude/GOTCHAS.md"
+  run run_doctor
+  [ "$status" -eq 0 ]
+  grep -q 'Count line' "$DOCFLAG"
+}
+
+@test "doctor Check 13: ECOSYSTEM contract anchor with out-of-enum status → WARNING" {
+  build_doctor_consumer
+  printf '# Eco\n\n### C\n\n<!-- contract:foo status:active -->\n' > "$DOC/.claude/ECOSYSTEM.md"
+  run run_doctor
+  [ "$status" -eq 0 ]
+  grep -q 'out-of-enum status' "$DOCFLAG"
+}
+
+@test "doctor Check 13: ECOSYSTEM prose comment mentioning 'contract:' is NOT flagged" {
+  build_doctor_consumer
+  printf '# Eco\n\n<!-- tasks reference contract:user-registration by ID -->\n\n### C\n\n<!-- contract:foo status:stable -->\n' > "$DOC/.claude/ECOSYSTEM.md"
+  run run_doctor
+  [ "$status" -eq 0 ]
+  if [ -f "$DOCFLAG" ]; then ! grep -q "state-structure" "$DOCFLAG" || false; fi
+}
+
+@test "doctors carry no bare '|| return' — under set -e it kills the run silently (BUG-031)" {
+  # A bare `return` after a failed command propagates that command's status;
+  # under `set -euo pipefail` the _run caller then trips errexit and the
+  # doctor exits 1 with no output — indistinguishable from "clean". Shipped
+  # once (jq-less machines never ran the doctor past check_statusline).
+  # Skip-guards must be `|| return 0`, never `|| return`.
+  for d in "$DOCTOR_SRC/doctor.sh" "$FW_REPO_ROOT/plugins/ccmaf/doctor/doctor.sh"; do
+    [ -f "$d" ] || continue   # plugin tree absent in consumer checkouts
+    if grep -nE '\|\| return[[:space:]]*$' "$d"; then
+      echo "bare '|| return' in $d (shown above) — use '|| return 0'"
+      return 1
+    fi
+  done
 }

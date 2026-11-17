@@ -2,7 +2,7 @@
 
 Enough to ship and operate a service safely. Platform engineering —
 operators, multi-tenancy, service mesh, library Helm charts, GitOps — is out
-of scope (flag a `kubernetes-development` skill if a task needs it). Kubernetes
+of scope (route to the `kubernetes-development` skill). Kubernetes
 ignores Dockerfile `HEALTHCHECK`; it uses its own probes.
 
 ## A production-shaped Deployment

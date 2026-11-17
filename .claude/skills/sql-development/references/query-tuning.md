@@ -38,11 +38,17 @@ executions, scans where seeks were expected.
 | Non-SARGable | Rewrite |
 |---|---|
 | `WHERE YEAR(OrderDate) = 2026` | `WHERE OrderDate >= '20260101' AND OrderDate < '20270101'` |
-| `WHERE CONVERT(date, Dt) = @d` | `WHERE Dt >= @d AND Dt < DATEADD(day, 1, @d)` |
+| `WHERE DATEADD(day, 1, Dt) > @d` (function wrapping the column) | `WHERE Dt > DATEADD(day, -1, @d)` |
 | `WHERE LEFT(Name,3) = 'ABC'` | `WHERE Name LIKE 'ABC%'` |
 | `WHERE Amount * 1.1 > 1000` | `WHERE Amount > 1000 / 1.1` |
 | `WHERE VarcharCol = 123` (implicit convert) | match literal/parameter type to column |
 | PG: `WHERE lower(email) = $1` without index | expression index on `lower(email)`, or `citext` |
+
+Exception worth knowing: T-SQL `CAST/CONVERT(date, DatetimeCol) = @d` IS
+SARGable (the optimiser builds a dynamic range seek), though its
+cardinality estimate can be worse than the explicit
+`Dt >= @d AND Dt < DATEADD(day, 1, @d)` range — prefer the range, but don't
+flag the cast as a scan without checking the plan.
 
 A syntactically clean predicate can still scan when a parameter, temp-table
 column or join key has the wrong type, length or collation — check the plan

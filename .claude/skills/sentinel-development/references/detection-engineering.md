@@ -34,8 +34,9 @@ ML behaviour analytics (templates), Threat Intelligence matching.
 Defender portal caveat: the XDR correlation engine names incidents —
 custom alert names may be overridden at incident level.
 
-For solution-packaged rules: include `StartTime = max(TimeGenerated),
-EndTime = min(TimeGenerated)` (those exact names) and at least one
+For solution-packaged rules: include `StartTime = min(TimeGenerated),
+EndTime = max(TimeGenerated)` (those exact names — earliest and latest
+event in the aggregation) and at least one
 primary entity (Host/Account/IP).
 
 ## Ingestion delay

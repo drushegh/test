@@ -20,6 +20,13 @@ tables verbatim; don't invent widget behaviour.
 elements; `aria-describedby` adds hints/errors. Name computation
 order matters — test in the accessibility tree, not by reading code.
 
+**Child labels leak into the parent's name.** A button's name is
+computed from its content, and a descendant's `aria-label` counts as
+content — an icon or prefix slot carrying `aria-label="Search"` turns
+the button "Go" into "Search Go". Mark decorative slot content
+`aria-hidden="true"`, or give the button an explicit `aria-label`, and
+assert the exact name (`getByRole('button', { name: 'Go', exact: true })`).
+
 ## Keyboard interaction baseline
 
 | Key | Expectation |
@@ -39,7 +46,20 @@ target) — positive tabindex is a bug. Focus must always be visible
 - **Modal dialog**: on open — move focus to dialog (first control or
   heading); trap Tab within; background `inert` (or aria-hidden +
   scroll lock); on close — restore focus to the invoker. Prefer
-  native `<dialog showModal>` which delivers most of this.
+  a native `<dialog>` opened with `dialog.showModal()` (a JS method,
+  not an attribute), which delivers most of this.
+- **Hand-rolled focus traps** (when native `<dialog>` is not an option):
+  the Shift+Tab wrap must include the panel container itself if it is
+  focusable (`tabIndex={-1}`, often the initial focus target), or
+  Shift+Tab from the container escapes the trap. Keep the trap's setup
+  effect from re-running on every render — an inline `onClose` in its
+  dependencies re-binds the trap and can re-focus the first control
+  mid-interaction; hold such callbacks in a ref.
+- **SVG controls**: `:focus-visible` was observed never to match a
+  focusable SVG shape (`<rect tabindex="0">`) in Chromium (verify on
+  your target browsers). Render the focus indicator explicitly — e.g.
+  toggle a focus class/outline element from `focus`/`blur` handlers —
+  and confirm it paints.
 - **SPA route change**: move focus to the new view's `h1` (or a
   `tabindex="-1"` main heading) and update `document.title` —
   otherwise screen reader users get silence.

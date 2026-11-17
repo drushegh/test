@@ -12,18 +12,48 @@ against a changing, defensive target is the real work.
 - Don't retry `4xx` (except 429) — they won't fix themselves; log and move on.
 
 ```python
-import httpx, time, random
+import random, time
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 
-def get_with_retry(client, url, attempts=4):
+import httpx
+
+def retry_after_seconds(value, default):
+    """Retry-After is either delta-seconds or an HTTP-date (RFC 9110)."""
+    if not value:
+        return default
+    try:
+        return max(0.0, float(value))
+    except ValueError:
+        pass
+    try:
+        when = parsedate_to_datetime(value)
+    except (TypeError, ValueError):
+        return default
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=timezone.utc)
+    return max(0.0, (when - datetime.now(timezone.utc)).total_seconds())
+
+def get_with_retry(client, url, attempts=4, max_wait=300):
     for i in range(attempts):
-        r = client.get(url)
-        if r.status_code == 429:
-            time.sleep(int(r.headers.get("Retry-After", 2 ** i)))
+        last = i == attempts - 1
+        backoff = (2 ** i) + random.random()
+        try:
+            r = client.get(url)
+        except httpx.TransportError:  # timeouts, resets, DNS — transient
+            if last:
+                raise
+            time.sleep(backoff)
             continue
-        if r.status_code < 500:
-            return r
-        time.sleep((2 ** i) + random.random())
-    r.raise_for_status()
+        if r.status_code == 429 or r.status_code >= 500:
+            if last:
+                r.raise_for_status()
+            wait = retry_after_seconds(r.headers.get("Retry-After"), backoff)
+            if wait > max_wait:  # told to go away for a long time: stop, don't queue up
+                r.raise_for_status()
+            time.sleep(wait)
+            continue
+        return r  # 2xx/3xx/other 4xx: caller decides (don't retry 4xx)
 ```
 
 ## Caching
@@ -39,7 +69,12 @@ Sites defend with rate limits, fingerprinting, CAPTCHAs and IP blocks. Polite,
 low-rate, honestly-identified scraping avoids most of it. Where you hit serious
 defences:
 
-- Rotating proxies and realistic pacing handle mild rate limits.
+- A rate limit is the site telling you its capacity: **slow down** (lower
+  concurrency, longer delays, honour `Retry-After`) — don't rotate
+  proxies/IPs to spread load past it. Distributing requests to evade a
+  limit is evasion, and it breaks the non-negotiables in `SKILL.md`
+  (be polite; don't evade access controls) and `legality-ethics.md`. If the
+  limit is too low for your need, ask the operator for access or an API.
 - **CAPTCHAs / aggressive fingerprinting / Cloudflare-style challenges** are a
   signal you're unwelcome. Building an evasion arms race is brittle, costly and
   often crosses an ethical/legal line. Prefer a **licensed data provider /

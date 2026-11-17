@@ -24,9 +24,13 @@ import { invoke } from "@tauri-apps/api/core";   // /core — /tauri is v1
 const greeting = await invoke<string>("greet", { name: "World" });
 ```
 
-- **Async commands take owned types** — `async fn f(name: String)`, never
-  `&str` (borrows can't cross await points; compile error).
-- Arguments: JS `camelCase` ↔ Rust `snake_case`, converted automatically.
+- **Async commands: prefer owned types** — `async fn f(name: String)`.
+  Borrowed arguments (`&str`, `State<'_, T>`) in an async command only
+  compile if the command returns a `Result`; otherwise switch to owned
+  types.
+- Argument names: JS `camelCase` ↔ Rust `snake_case`, converted
+  automatically (`#[tauri::command(rename_all = "snake_case")]` to opt
+  out). Command **names** are not converted — `invoke("get_user")`.
   `Option<T>` ↔ optional/undefined JS argument.
 - All argument types `Deserialize`, return types `Serialize`. Complex enums
   need `#[serde(tag = "type")]`-style representation to be JSON-safe.
@@ -57,6 +61,29 @@ fn read_config(path: String) -> Result<Config, AppError> { /* ... */ }
 ```
 
 Frontend: rejected promise — `try { await invoke(...) } catch (e) { ... }`.
+
+### tauri-specta generated bindings (observed on 2.0 release candidates — verify on yours)
+
+- Generated `commands.foo()` resolve to `{ status: "ok" | "error" }` for
+  your typed errors but still **reject** for anything else (panics, IPC
+  failures). That is three outcomes: handle both, and reset loading flags
+  in `finally`.
+- Argument-deserialisation failures arrive as a plain string, not your
+  tagged error enum — don't assume `error.kind` exists.
+- `serde_json::Value` produces broken TS; wrap it in a newtype that
+  specta exports as `unknown`.
+- `///` doc comments are copied into `bindings.ts`, so editing one forces
+  a regeneration diff — use `//` for status notes.
+- Building `tauri_specta::Builder` inside a `#[test]` on Windows can fail
+  with `STATUS_ENTRYPOINT_NOT_FOUND` (the test binary links WebView2).
+  Export bindings from a dev-only binary/build step, and keep logic in a
+  crate that doesn't depend on `tauri`, so `cargo test` stays clean.
+
+### Events with pre-serialised JSON
+
+`emit("evt", json_string)` serialises the `String` again — the frontend
+receives a JSON *string*, not an object. If you already hold JSON text,
+use `emit_str` / `emit_str_to`.
 
 ## State
 

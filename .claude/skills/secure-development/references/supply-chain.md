@@ -24,6 +24,13 @@ chain. NIS2 also makes supply-chain security an explicit obligation
    yearly majors; security patches expedited with a defined SLA.
 6. Watch for dependency confusion: internal package names registered
    publicly — scope internal feeds, pin registries explicitly.
+7. **`npx -y pkg@1.2.3` pins only the top-level package.** Its
+   transitive dependencies still resolve by their caret ranges at run
+   time (unless the package ships an `npm-shrinkwrap.json`), npx honours
+   the current project's `.npmrc` (registry, auth), and it may use a copy
+   already present in the project's `node_modules` instead of fetching. For
+   tools you run repeatedly (MCP servers, CLIs in CI), install them as
+   locked dev dependencies and run the local binary instead.
 
 ## Build and artefact integrity (A08)
 
@@ -58,7 +65,7 @@ chain. NIS2 also makes supply-chain security an explicit obligation
 1. Inventory (SBOM per release) → 2. Monitor (advisories matched to
    inventory) → 3. Assess (reachable? exploited in the wild? KEV
    list?) → 4. Patch/mitigate within SLA by severity → 5. Record
-   (evidence for audits and the tender question "describe your
+   (evidence for audits and the assurance question "describe your
    vulnerability management process").
 
 ## Review checklist for a new dependency/integration

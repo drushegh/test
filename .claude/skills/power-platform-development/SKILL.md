@@ -80,6 +80,12 @@ references/power-automate.md.
 
 ## Agent Workflow Rules
 
+- **Keep pac current** — it goes stale silently and preview groups
+  (`pac code`) change fast. MSI install: `pac install latest`; .NET tool
+  install: `dotnet tool update --global Microsoft.PowerApps.CLI.Tool`.
+  The version is printed by bare `pac` (there is no `--version`). On
+  Windows, pac's `.cmd` shim may be invisible to a Git Bash tool's PATH —
+  run it from PowerShell.
 - Inspect before changing: `pac org who`, `pac solution list`, read the
   app/flow definition before editing it.
 - Keep environment-specific values in **environment variables** and

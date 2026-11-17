@@ -18,7 +18,11 @@ description: >-
 Consolidated .NET engineering standards for agents writing production C#.
 Distilled from Microsoft's official dotnet/skills repo. The rules in this
 file always apply. Load files from `references/` only when the task touches
-that topic — do not load them speculatively.
+that topic — do not load them speculatively. Native Windows desktop UI —
+WPF, WinUI 3, WinForms and .NET MAUI on Windows (XAML, data binding, MVVM,
+dispatcher threading, styling/templates, MSIX packaging, UI Automation) —
+routes to windows-desktop-development; this skill owns the C# language,
+runtime, EF Core and testing beneath it.
 
 ## Baseline
 
@@ -26,16 +30,7 @@ Modern .NET (8 LTS / 9 / 10 LTS) with C# 12+. In existing repos, match the
 established target framework, style, and conventions — never silently
 upgrade or mix styles. Repo-wide settings belong in `Directory.Build.props`:
 
-```xml
-<Project>
-  <PropertyGroup>
-    <Nullable>enable</Nullable>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
-    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
-  </PropertyGroup>
-</Project>
-```
+set `Nullable` and `ImplicitUsings` to enable, and `TreatWarningsAsErrors` and `EnforceCodeStyleInBuild` to true, inside a `PropertyGroup`.
 
 ## Code Standards
 
@@ -51,13 +46,17 @@ upgrade or mix styles. Repo-wide settings belong in `Directory.Build.props`:
 - **`DateTimeOffset` over `DateTime`** for timestamps — preserves offset,
   serialises unambiguously. Never `DateTime.Now` in logic (untestable,
   timezone-ambiguous); inject `TimeProvider` where time matters.
+  **Exception — EF Core on SQLite**: `DateTimeOffset` (also `decimal`,
+  `TimeSpan`, `ulong`) supports only equality there; `OrderBy` or
+  `<`/`>=` throws "could not be translated" at runtime, which in-memory
+  fixtures never hit. Store UTC `DateTime` or ticks — see ef-core.md.
 - **`CancellationToken` on every async endpoint and service method**,
   forwarded through the whole call chain (EF queries, HttpClient, etc.).
 - **`async`/`await` all the way down.** Never `.Result`, `.Wait()`, or
   `.GetAwaiter().GetResult()` on async code — deadlock and thread-pool
   starvation risk. Never `async void` except event handlers.
 - **DI-first**: constructor injection, interfaces for services
-  (`AddScoped<IProductService, ProductService>()`), `IHttpClientFactory`
+  (`AddScoped` (interface to implementation)), `IHttpClientFactory`
   for HTTP clients (never `new HttpClient()` per call). Lifetimes:
   singleton for stateless services, scoped for anything touching
   `DbContext`; a singleton must never capture a scoped service (captive

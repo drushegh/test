@@ -25,14 +25,18 @@ trades ubiquity for speed. Vitest is the test runner in both.
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "lint": "eslint . --fix",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
     "format": "prettier --write .",
+    "format:check": "prettier --check .",
     "check": "npm run typecheck && npm run lint && npm run test"
   }
 }
 ```
 
-Run `check` in order — typecheck, lint, test — to fail fast. In CI use
+Run `check` in order — typecheck, lint, test — to fail fast. Keep `lint`
+read-only (no `--fix`) so CI fails on fixable issues instead of silently
+rewriting files; use `lint:fix` locally. In CI use
 frozen lockfiles (`npm ci` / `pnpm install --frozen-lockfile` /
 `bun install --frozen-lockfile`).
 
@@ -53,8 +57,8 @@ package.json test script — use `bun run test`.
 
     // Module / output
     "target": "ES2022",
-    "module": "ESNext",
-    "moduleResolution": "bundler",   // "nodenext" for Node libraries
+    "module": "ESNext",              // Node libraries: set BOTH of these
+    "moduleResolution": "bundler",   // to "NodeNext" — tsc rejects a mismatch
     "esModuleInterop": true,
     "resolveJsonModule": true,
     "isolatedModules": true,
@@ -72,18 +76,45 @@ Libraries additionally need `declaration: true`, `sourceMap: true`, and an
 emit config. Large repos: project references + incremental compilation cut
 build times.
 
+**Split app and test configs.** The build config (`tsconfig.app.json` /
+`tsconfig.build.json`) excludes `**/*.test.ts(x)` and test setup; a
+`tsconfig.test.json` (or Vitest's own config) adds `"types":
+["vitest/globals"]`. Otherwise either the build type-checks test-only globals
+or the tests lose their types. With a references-only root
+`tsconfig.json`, the real check is `tsc -b` (or each `-p` config) — see the
+SKILL.md warning on bare `tsc`.
+
+## pnpm Specifics
+
+- **Dependency build scripts are blocked by default** (pnpm 10+). Packages
+  with native postinstall steps (esbuild, workerd, better-sqlite3, sharp)
+  fail the install with `ERR_PNPM_IGNORED_BUILDS` until approved. pnpm
+  10.26+ and 11 use an `allowBuilds` map in `pnpm-workspace.yaml`
+  (`esbuild: true`); pnpm 11 removed `onlyBuiltDependencies` and friends
+  (codemod: `pnpx codemod run pnpm-v10-to-v11`). `pnpm approve-builds` and
+  `pnpm add --allow-build` write the map for you — check the written value
+  is a real `true`/`false`, not a placeholder.
+- **`pnpm --filter web test -- path` forwards a literal `--`** to the script
+  and can run the whole suite. Target the binary instead:
+  `pnpm --filter web exec vitest run path/to/file.test.ts`.
+
 ## Biome (if chosen over ESLint + Prettier)
 
 ```json
 {
   "$schema": "https://biomejs.dev/schemas/2.0.0/schema.json",
   "vcs": { "enabled": true, "clientKind": "git", "useIgnoreFile": true },
-  "files": { "ignoreUnknown": true, "ignore": ["dist", "node_modules", "*.gen.ts"] },
+  "files": { "ignoreUnknown": true, "includes": ["**", "!**/dist/**", "!**/*.gen.ts"] },
   "formatter": { "enabled": true, "lineWidth": 100 },
   "linter": { "enabled": true, "rules": { "recommended": true } },
-  "organizeImports": { "enabled": true }
+  "assist": { "actions": { "source": { "organizeImports": "on" } } }
 }
 ```
+
+Biome 2 syntax: `files.ignore`/`files.include` became a single
+`files.includes` list with `!` negations, and top-level `organizeImports`
+moved under `assist.actions.source`. `biome migrate --write` converts a
+1.x config. `node_modules` is ignored by default.
 
 Commands: `biome check .` (lint + format check), `biome check --write .`
 (fix), `biome ci .` (CI mode). In monorepos, share config via a workspace
@@ -120,6 +151,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4          # reads "packageManager" from package.json
       - uses: actions/setup-node@v4
         with: { node-version: 22, cache: "pnpm" }
       - run: pnpm install --frozen-lockfile
@@ -127,6 +159,10 @@ jobs:
       - run: pnpm lint
       - run: pnpm test
 ```
+
+`setup-node`'s `cache: "pnpm"` needs pnpm already on the PATH, so
+`pnpm/action-setup` must come first (npm projects: drop it and use
+`cache: "npm"` + `npm ci`).
 
 ## Bundle Hygiene
 

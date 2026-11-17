@@ -66,6 +66,12 @@ Idempotency-Key: 9f1c7e2a-...-keyper-client-attempt
 Scope keys per endpoint + authenticated principal; expire them after a sensible
 window (e.g. 24h).
 
+The same applies to **client-generated ids** (offline-first clients that POST
+`{ "id": "<uuid>", ... }`): on a replay, look up the existing row by that id
+*first* and return it, before re-resolving references or re-running validation —
+a replay that re-resolves can fail (or diverge) because the world moved since the
+first attempt.
+
 ## Async (long-running) operations
 
 Return `202 Accepted` immediately with a way to track progress:

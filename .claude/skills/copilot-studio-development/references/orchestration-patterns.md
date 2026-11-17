@@ -56,13 +56,19 @@ beginDialog:
       conditions:
         - id: hasLeak
           condition: |
-            =IsMatch(Lower(System.Response.FormattedText), "explanation_of_tool_call")
+            =!IsBlank(Find("explanation_of_tool_call", Lower(System.Response.FormattedText)))
+              || !IsBlank(Find("new_instruction", Lower(System.Response.FormattedText)))
           actions:
             - kind: SetVariable
               id: suppress
               variable: System.ContinueResponse
               value: false
 ```
+
+Use a substring test (`Find`, or `IsMatch(..., MatchOptions.Contains)`) —
+plain `IsMatch` defaults to `MatchOptions.Complete` and only matches when the
+whole response equals the pattern, so it never fires on a real leak. Test the
+topic with a forced leak before relying on it.
 
 Apply both to any production agent with tools.
 

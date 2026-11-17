@@ -28,8 +28,15 @@ final class ProfileViewModel: ObservableObject {
 struct ProfileView: View {
     @StateObject private var viewModel = ProfileViewModel()   // view OWNS it
     var body: some View {
-        content.task { await viewModel.onAppear() }
+        ProfileContent(state: viewModel.state)
+            .task { await viewModel.onAppear() }
     }
+}
+
+// Stateless renderer: takes plain state, so previews/tests can drive it
+struct ProfileContent: View {
+    let state: ViewState
+    var body: some View { /* switch state { … } */ }
 }
 ```
 
@@ -113,10 +120,10 @@ AsyncImage(url: item.imageURL) { image in
 
 ```swift
 #Preview("Loaded") {
-    ProfileView(state: .loaded(.fixture))
+    ProfileContent(state: .loaded(.fixture))
 }
 #Preview("Dark, large text") {
-    ProfileView(state: .loaded(.fixture))
+    ProfileContent(state: .loaded(.fixture))
         .preferredColorScheme(.dark)
         .environment(\.dynamicTypeSize, .accessibility3)
 }

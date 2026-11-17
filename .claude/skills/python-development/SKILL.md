@@ -52,8 +52,8 @@ the task touches that topic — do not load them speculatively.
 
 ```bash
 uv sync                  # dependency management (preferred over pip)
-ruff check . --fix       # lint (covers import sorting)
-ruff format .            # format (replaces black + isort)
+ruff check . --fix       # lint + import sorting (needs "I" selected)
+ruff format .            # format (replaces black; does NOT sort imports)
 pyright .                # type check (mypy also acceptable)
 pytest                   # tests
 ```
@@ -109,6 +109,15 @@ Also forbidden: bare `except:`, wildcard imports, swallowing exceptions
 silently, N+1 query patterns (use `select_related`/`prefetch_related` or
 eager loading).
 
+**Text on Windows**: below Python 3.15, `open()` and
+`subprocess.run(text=True)` default to the locale code page (cp1252), and
+a non-ASCII `print()` can crash with `'charmap' codec can't encode`.
+Always pass `encoding="utf-8"` (and `errors=` deliberately); never
+`errors="ignore"` on documents — decode with a `utf-8-sig` → `cp1252` →
+`latin-1` fallback. Embedded JS/CSS/regex goes in raw strings, and never
+call `.format()` on content containing braces. Details:
+[references/text-and-encoding.md](references/text-and-encoding.md).
+
 ## Error Handling
 
 Catch **specific** exceptions; chain with `raise ... from e` to preserve
@@ -121,7 +130,10 @@ include a code and message, never stack traces. Details:
 
 - Validate and sanitise all inputs; parameterised SQL only.
 - No dynamic code evaluation (`eval`/`exec`) or unsafe deserialisation
-  (`pickle`) on untrusted data.
+  (`pickle`) on untrusted data. `exec(code, {"__builtins__": {}})` is
+  **not** a sandbox — `().__class__.__base__.__subclasses__()` walks back
+  to `os`/`subprocess`. Untrusted snippets need process isolation (a
+  locked-down subprocess/container), not namespace tricks.
 - Crypto: never MD5/SHA-1/DES/RC4 or hand-rolled crypto. Use SHA-256+ for
   hashing, AES-256-GCM for encryption, Argon2/scrypt for passwords,
   `secrets` for tokens, the `cryptography` package for operations.
@@ -165,4 +177,9 @@ workflow: [references/performance.md](references/performance.md).
 | Type annotations beyond basics: Protocol, TypedDict, TypeVar, ParamSpec, variance | [references/type-system.md](references/type-system.md) |
 | Exception design, logging setup | [references/errors-and-logging.md](references/errors-and-logging.md) |
 | Writing or fixing tests | [references/testing.md](references/testing.md) |
-| asyncio, threads, multiprocessing | [refere
+| asyncio, threads, multiprocessing | [references/async-concurrency.md](references/async-concurrency.md) |
+| Framework choice, project structure, FastAPI/Django, background tasks | [references/architecture.md](references/architecture.md) |
+| Profiling, data-structure choice, optimisation | [references/performance.md](references/performance.md) |
+| Diagnosing a failure, reading tracebacks | [references/debugging.md](references/debugging.md) |
+| New project layout, pyproject.toml, toolchain, imports, torch/CUDA and native deps | [references/project-setup.md](references/project-setup.md) |
+| Encodings (Windows cp1252, subprocess, BOM, legacy docs), code inside strings, `str.format` on content | [references/text-and-encoding.md](references/text-and-encoding.md) |

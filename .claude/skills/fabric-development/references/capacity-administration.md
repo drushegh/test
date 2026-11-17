@@ -71,7 +71,7 @@ rm/mv items without explicit instruction.
 - Domains group workspaces for data-mesh-style ownership; endorsement
   (Promoted/Certified) and sensitivity labels behave as in Power BI.
 - Capacity admins ≠ tenant admins ≠ workspace admins — name the right
-  audience in designs and tender responses.
+  audience in designs and proposals.
 
 Docs: https://learn.microsoft.com/fabric/enterprise/throttling ·
 https://learn.microsoft.com/fabric/enterprise/metrics-app ·

@@ -45,13 +45,16 @@ way out:
 
 ```http
 HTTP/1.1 200 OK
-Deprecation: true
+Deprecation: @1735689599
 Sunset: Sat, 31 Jan 2026 23:59:59 GMT
 Link: <https://api.example.com/docs/migrate-v2>; rel="deprecation"
 ```
 
-- `Deprecation` (RFC 9745) signals the resource is deprecated; `Sunset`
-  (RFC 8594) gives the date it stops working.
+- `Deprecation` (RFC 9745) signals the resource is (or will be) deprecated.
+  Its value is a Structured Field Date — `@` plus a Unix timestamp (above:
+  2024-12-31T23:59:59Z, when deprecation took effect); the old draft's
+  `Deprecation: true` is not valid. `Sunset` (RFC 8594) gives the HTTP-date
+  it stops working, and must not be earlier than the deprecation date.
 - Publish a migration guide and a realistic window (months, not days, for
   partner/government consumers).
 - Track usage of deprecated versions so you can chase remaining callers before
@@ -61,5 +64,4 @@ Link: <https://api.example.com/docs/migrate-v2>; rel="deprecation"
 
 State, per API: the versioning scheme, how long old major versions are
 supported, what counts as breaking, and the deprecation process. Putting this
-in the API's documentation (and tender responses) is often a scored
-requirement in public-sector integrations.
+in the API's documentation is often a scored requirement in enterprise integrations.

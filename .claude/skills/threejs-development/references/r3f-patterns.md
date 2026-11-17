@@ -28,7 +28,10 @@ function Spinner() {
 
 2. **Zustand with selectors** — `useStore((s) => s.speed)`, never the
    whole store; **transient subscriptions**
-   (`useStore.subscribe(sel, cb)` read in `useFrame`) for
+   (read the latest value via `useStore.getState()` inside `useFrame`,
+   or `useStore.subscribe(cb)` into a ref; the selector form
+   `subscribe(sel, cb)` requires the `subscribeWithSelector`
+   middleware) for
    continuously-changing values so React never re-renders.
 3. Isolate stateful UI from the scene graph; memoise heavy subtrees;
    `frameloop="demand"` + `invalidate()` for static scenes.

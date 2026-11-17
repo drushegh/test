@@ -7,7 +7,7 @@ target and pass/fail criteria first; a load run without an SLO is just traffic.
 
 - **SLIs/SLOs**: the metrics that matter (p95/p99 latency, throughput/RPS,
   error rate) and the thresholds that pass. Derive from requirements / the
-  tender's NFRs.
+  contract's NFRs.
 - **Workload model**: realistic mix of journeys, think time between actions,
   and a ramp — not an instant thundering herd (unless you're testing exactly
   that).

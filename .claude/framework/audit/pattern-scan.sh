@@ -19,7 +19,7 @@ set -euo pipefail
 REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 cd "$REPO_ROOT"
 
-# Scope: framework-owned shell scripts. Hooks + .claude/framework/.
+# Scope: framework-owned shell scripts. Hooks + .claude/framework/ + .claude/skills/.
 SCAN_PATHS=(".claude/hooks" ".claude/framework" ".claude/skills")
 
 FINDINGS=0
@@ -94,17 +94,35 @@ check_crlf_strip() {
 
       # This is a real file-redirected read. Check for CRLF strip in
       # the first 3 lines of the loop body.
+      #
+      # This `found` is a plain scalar local to THIS function
+      # (check_crlf_strip) — unrelated to the array `found` declared in
+      # the separate function _sh_files() above. shellcheck's local-var
+      # scope tracking conflates same-named locals across sibling
+      # functions here (still reproduces on shellcheck 0.10.0, the
+      # latest release as of this fix); every site below is
+      # independently correct, `local`-scoped code, so each false
+      # positive is disabled individually (directives only apply to the
+      # single following line).
+      # shellcheck disable=SC2178
       local found=0
       local probe next_content
       for probe in 1 2 3; do
         next_content=$(sed -n "$((line_num + probe))p" "$file" 2>/dev/null || true)
         if echo "$next_content" | grep -qE "${varname}=.*%\\\$'\\\\r'"; then
+          # shellcheck disable=SC2178
           found=1
           break
         fi
       done
-      [ "$found" -eq 0 ] && _report "$file" "$line_num" \
-        "\`while IFS= read -r $varname\` reads from a file without CRLF strip — on Windows (core.autocrlf=true) \\r survives. Fix: add \`${varname}=\"\${${varname}%\$'\\\\r'}\"\` on the next line."
+      # An `if`, not `[ ... ] && _report`: as the loop's LAST command, a false
+      # test would make the loop (and so the function) return 1, and `set -e`
+      # would then kill the scan — breaking the always-exit-0 contract.
+      # shellcheck disable=SC2128
+      if [ "$found" -eq 0 ]; then
+        _report "$file" "$line_num" \
+          "\`while IFS= read -r $varname\` reads from a file without CRLF strip — on Windows (core.autocrlf=true) \\r survives. Fix: add \`${varname}=\"\${${varname}%\$'\\\\r'}\"\` on the next line."
+      fi
     done < <(grep -nE '^[[:space:]]*while IFS= read -r' "$file" 2>/dev/null)
   done < <(_sh_files)
 }

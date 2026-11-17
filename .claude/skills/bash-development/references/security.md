@@ -79,9 +79,9 @@ coreutils — see portability.md.)
 tmp="/tmp/myapp.tmp"          # attacker pre-creates as symlink to /etc/passwd
 tmp="/tmp/myapp-$$.tmp"       # PIDs are guessable
 
-# ✅
-readonly TMP_FILE=$(mktemp)
-readonly TMP_DIR=$(mktemp -d)
+# ✅ (split declare/assign — `readonly X=$(...)` masks mktemp's exit — SC2155)
+TMP_FILE=$(mktemp); readonly TMP_FILE
+TMP_DIR=$(mktemp -d); readonly TMP_DIR
 chmod 600 "$TMP_FILE"; chmod 700 "$TMP_DIR"
 trap 'rm -rf -- "$TMP_FILE" "$TMP_DIR"' EXIT INT TERM
 ```

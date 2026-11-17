@@ -1,7 +1,7 @@
 # Azure platforms — Azure SQL Database and PG Flexible Server
 
 Stamped June 2026 — tiers, limits and defaults move; re-verify on
-learn.microsoft.com before committing numbers to a design or tender.
+learn.microsoft.com before committing numbers to a design or proposal.
 
 ## Azure SQL Database — tier selection
 

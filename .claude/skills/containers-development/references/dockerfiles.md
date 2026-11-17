@@ -23,11 +23,16 @@ FROM deps AS build
 COPY . .
 RUN npm run build
 
+FROM node:22-bookworm AS prod-deps
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN --mount=type=cache,target=/root/.npm npm ci --omit=dev
+
 FROM gcr.io/distroless/nodejs22-debian12 AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
 COPY --from=build /app/dist ./dist
-COPY --from=deps /app/node_modules ./node_modules
+COPY --from=prod-deps /app/node_modules ./node_modules
 USER nonroot
 EXPOSE 3000
 CMD ["dist/main.js"]

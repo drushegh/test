@@ -4,6 +4,16 @@ This file is FRAMEWORK-OWNED. The update system (.claude/framework/update/)
 will overwrite it when a new framework version is pulled. Do not edit
 it directly — make project-specific changes in CLAUDE.md instead.
 
+The same overwrite policy applies to EVERY path listed in
+`.claude/framework/update/framework-manifest.txt` — including the shipped
+hooks (`.claude/hooks/*`) and commands (`.claude/commands/*` framework
+entries). If you customise one of those files, the next update replaces
+your version with upstream's (apply-update names each such collision
+loudly, and a committed version stays recoverable from git history — but
+it is no longer the live copy). To customise durably, add your own
+hook/command under a different, non-manifest filename and register it in
+`.claude/settings.json` (consumer-owned, never overwritten).
+
 `CLAUDE.md` includes this file via the pointer at its top. Both files
 are loaded into the session context on cold start.
 
@@ -13,30 +23,48 @@ are loaded into the session context on cold start.
 
 <!-- Steps 5-9 are ordered for prompt-cache optimisation: stable content
      (contracts, decisions) before volatile (tasks, status, progress).
-     Steps 0-4 emit session-varying output and sit first for a different
+     Steps 1-4 emit session-varying output and sit first for a different
      reason: broken state must surface before any content is read. -->
 
-0. **Framework-self mode (upstream framework dev only)** — If
-   `.claude/framework-self.flag` exists, state files (`TASKS.md`,
-   `STATUS.md`, `DECISIONS.md`, `ECOSYSTEM.md`, `GOTCHAS.md`,
-   `FRAMEWORK-SUGGESTIONS.md`, `claude-progress.txt`,
-   `framework-metrics.md`) live under `.claude/framework/self/` rather than
-   at root. Root copies stay as clean templates. All later steps in
-   this runbook that reference state-file paths resolve to
-   `.claude/framework/self/<filename>` when the flag is present. The flag
-   is gitignored and created manually in the upstream repo only —
-   consumers never see it and read `.claude/` state files as usual.
+**First — Sync to remote (Rehydrate).** `git pull --ff-only` the project repo to
+pick up a `/wrapup` Handoff committed on another machine. This runs BEFORE every
+numbered step: step 1 may apply a framework update and step 0 reads
+`.framework-version`, so running them against a stale checkout re-offers an update
+(or migration) the other machine already applied and committed — and the later pull
+then conflicts with the local re-application. Essential for the PC ↔ laptop handoff;
+a harmless no-op on the same machine, and it doubles as a remote-drift check. On a
+non-fast-forward or conflict, STOP and surface it to the user — don't merge or rebase
+blind. (Separate from step 1's *framework* update check: this syncs the project's own
+committed state, not the framework upstream.)
 
-   Rationale: this lets the upstream framework repository dogfood its
-   own framework fully (real task board, real session log, real
-   decisions) without that development state leaking into consumer
-   clones. The flag is the only per-clone bit that distinguishes
-   upstream from a consumer; no manifest or code-path branching.
+0. **v2 migration (one-time, when offered)** — If `.claude/framework/update/migrate-v2.sh`
+   exists AND `.claude/.framework-version` has no `FRAMEWORK_LINE=v2` line AND this is
+   not the framework dev repo (no `.claude/.framework-dev-repo` marker): CCMAF v2 is
+   available — the framework now ships as plugins (ccmaf-kernel safety floor + ccmaf
+   core + optional siblings) and this project can cross over once. Tell the user, then
+   AskUserQuestion: *show the plan* (Recommended — run `bash
+   .claude/framework/update/migrate-v2.sh --dry-run` and present it) / *migrate now* /
+   *not now* (re-offered each cold start; staying on v1 is harmless). After presenting
+   a clean dry run, re-ask with **migrate now as the Recommended option** — the plan
+   just showed the move is safe and one revertible commit; the only cost is a session
+   restart. On *migrate now*: the script refuses until the plugin floor is installed —
+   run the `claude plugin` commands it prints, then tell the user to CLOSE AND REOPEN
+   their IDE/terminal (that is what "restart the session" means — VS Code window,
+   terminal, whatever hosts Claude Code) and say they're back; in the fresh session run
+   `bash .claude/framework/update/migrate-v2.sh --yes` and follow its next-steps
+   output. Post-migration, `/ccmaf:init` is run BY CLAUDE in the new session — never
+   ask the user to run it themselves; they only close/reopen and say they're back.
+   After a successful migration this file no longer exists — the plugin owns cold
+   start from then on.
+
 1. **Framework update check** — Run `bash .claude/framework/update/check-updates.sh`
    (silent if up-to-date). If `.claude/.framework-update-available.md` exists
    afterwards, read it, summarise the new commits to the user via
    AskUserQuestion, and ask whether to update. On *yes*: run
-   `bash .claude/framework/update/apply-update.sh` and then RESTART the cold
+   `bash .claude/framework/update/apply-update.sh --yes` (the `--yes` skips
+   the script's own confirmation prompt — the human already gave the
+   go-ahead via this AskUserQuestion, so a second, non-interactive prompt
+   from a Bash-tool call would just hang) and then RESTART the cold
    start from step 1 (agent definitions may have changed). On *no*:
    delete `.claude/.framework-update-available.md` for this session and continue.
 
@@ -56,6 +84,35 @@ are loaded into the session context on cold start.
      (create `.claude/.skills-declined`, COMMIT it, delete the flag).
    (Skills are separate from the framework update above — a different
    upstream, different pin.)
+
+   Then run `bash .claude/framework/update/console-check.sh` (usually silent).
+   If `.claude/.console-suggestion.md` exists afterwards (the project has NOT
+   opted into the Console and the suggestion throttle has elapsed), read it and
+   ask via AskUserQuestion: *set up the Console now* (create
+   `.claude/.console-version` per the flag's "To set up" section —
+   `echo latest > .claude/.console-version` — COMMIT it, then run
+   `node tools/console.mjs start`; delete the flag) / *not now* (delete the flag;
+   re-suggested after `CONSOLE_SUGGEST_INTERVAL_DAYS`, default 14) / *never for
+   this project* (create + COMMIT `.claude/.console-declined`, delete the flag).
+   Silent when the project is already opted in. (The Console ships via npm,
+   decoupled from the framework update above — this is only a discovery nudge.)
+
+   1.5 **CI workflow setup (once — the shipped `.github/` scaffold)** — If
+   `.github/workflows/codeql.yml` exists AND `.claude/.ci-configured` is absent
+   (a fresh clone that inherited the framework's CI scaffold), ask the user via
+   AskUserQuestion whether this is a **private repo on free-tier GitHub**: CodeQL
+   code scanning is free only on PUBLIC repos — a private repo needs paid GitHub
+   Advanced Security, so the shipped CodeQL job can't run there. (The workflow is
+   already gated to skip on private, so it won't *fail* — but it's dead weight.)
+   Options: *private + free-tier → disable CodeQL* (rename
+   `.github/workflows/codeql.yml` → `codeql.yml.disabled` — kept in the repo but
+   inactive, since GitHub only runs `.yml`) / *public, or I have GHAS → keep it*
+   (leave as-is; it self-skips on private anyway) / *decide later* (skip; re-asked
+   next cold start). On either of the first two, create + COMMIT
+   `.claude/.ci-configured` so this is asked once. **Re-enable anytime** by
+   renaming `codeql.yml.disabled` back to `codeql.yml`. (CodeQL is the only
+   shipped CI that assumes an account tier — `close-prs.yml` is already inert
+   outside the canonical repo, and Dependabot works on private free-tier repos.)
 2. **Framework insights check** — Run `bash .claude/framework/insights/analyse.sh`
    (silent if nothing to report; throttled by `INSIGHTS_CHECK_INTERVAL_DAYS`).
    If `.claude/.framework-insight-alert.md` exists afterwards, read it, summarise
@@ -70,6 +127,10 @@ are loaded into the session context on cold start.
    CLAUDE.framework.md include, missing manifest paths will cause silent
    session failures). WARNING findings should be triaged. Surface via
    AskUserQuestion: *fix now* / *file as task* / *dismiss for this session*.
+   NAG findings (e.g. a reconcile-cadence reminder) are advisory nudges, not
+   broken state — surface them to the user in one line but don't block on
+   them or route them through the fix/file/dismiss triage; a NAG only
+   clears once its named command actually runs.
 4. **Healthcheck reminder (deep audit)** — Check
    `.claude/telemetry/.last-healthcheck` (ISO timestamp of last successful
    run). If missing OR older than `HEALTHCHECK_REMIND_DAYS` (from
@@ -82,12 +143,33 @@ are loaded into the session context on cold start.
    On *skip*: touch `.claude/telemetry/.last-healthcheck` with the current
    timestamp — the nudge waits another full interval. Throttle: only one healthcheck
    prompt per cold start, even if multiple reasons to nudge exist.
+
+   4.5 *(moved)* — the Rehydrate `git pull --ff-only` now runs FIRST, before
+   step 0 (see the top of this sequence); nothing to do here.
 5. Read contracts — types, boundaries, interface agreements (stable — high cache hit rate). Default: `.claude/ECOSYSTEM.md` (monolithic); projects using per-file contracts read `contracts/` instead. Project CLAUDE.md specifies which layout applies.
 6. Read recent decisions — top 10, newest first (mostly stable). Default: `.claude/DECISIONS.md`; per-file layouts read `decisions/`. Project CLAUDE.md specifies which layout applies.
 7. Read `.claude/TASKS.md` → task board with lifecycle statuses (changes each session)
 8. Read `.claude/STATUS.md` → current state, who's doing what (changes each session)
 9. Read `.claude/claude-progress.txt` → Rolling Summary + last 3 detailed entries (newest first)
 10. Run `.claude/framework/init.sh` → start dev server, verify nothing is broken
+
+    10.5 **Project Console (opt-in)** — If the project is opted in to the Console
+    (presence of `.claude/.console-version`, or the legacy boolean `.claude/.console-enabled`),
+    bring its Console up and surface the URL: run `node tools/console.mjs start` (via your Bash
+    tool so it's Git Bash, not WSL). The Console is an installable npm package (`ccmaf-console`);
+    the driver resolves it — a `CONSOLE_DIR` dev checkout → a global `ccmaf-console` on PATH →
+    `npx ccmaf-console@<spec>` — and drives its launcher, which
+    spawns the server DETACHED and prints `http://127.0.0.1:<port>` — report that URL to the
+    user. It also starts the machine-global tray Hub if none is running (so the console is
+    visible there). The command returns once the server is up (no need to background it).
+    `start` is idempotent (already running → reprints the URL) and respects a prior manual tray
+    "End" (`autoStart:false` → it skips the respin). It also sets `CONSOLE_REAP_GRACE_MIN` so
+    the tray Hub reaps this project's entry if the session dies ungracefully — the
+    `console-heartbeat` hook keeps the entry fresh while you work (see
+    `contract:console-lifecycle`). `/wrapup` runs `console stop` at session end; after a Console
+    update, use `node tools/console.mjs restart` (not `start`) so the rebuilt server is picked
+    up. Not opted in → skip silently. To opt a project in: `echo latest > .claude/.console-version`
+    (content = an npm version spec; presence marks opt-in) and commit it.
 11. Pick the highest-priority unblocked task from `.claude/TASKS.md`
 12. Check `.claude/GOTCHAS.md` → entries relevant to the task area
 13. Pre-task check: estimate context cost against the current window, ask user if projected >= 90%
@@ -109,16 +191,68 @@ are loaded into the session context on cold start.
 
 - Every commit MUST include the task/bug ID: `type: description (TASK-XXX)` or `(BUG-XXX)`
 - A task cannot move to Ready for Review or Done without a linked commit
-- Verify with: `git log --oneline --grep="TASK-XXX"`
+- Verify with: `git log --oneline -E --grep='TASK-XXX([^0-9]|$)' -- . ':(exclude,glob).claude/*.md' ':(exclude,glob).claude/.*' ':(exclude).claude/claude-progress.txt' ':(exclude).claude/archive'`
+  — excludes only the board/bookkeeping files (top-level `.claude/*.md` state files,
+  `.claude/.*` pins/markers, the progress log, the archive), so a commit that only
+  updated the board does not count, while real work under `.claude/` (hooks,
+  commands, agents, framework scripts) still does. A blanket `':(exclude).claude'`
+  can never pass for framework work itself. The `-E` + `([^0-9]|$)` stops
+  `TASK-12` from matching `TASK-123`.
 
 ## Agent Rules
 
 - Architect plans, Developer implements, Tester tests, Reviewer reviews
+- Supporting roles: **verifier** confirms/refutes other agents' claims
+  before they're acted on (/review wires it in); **researcher** gathers
+  cited evidence; **ui-designer** builds user-facing UI (/build routes
+  UI tasks to it); **ux-critic** judges UX with walkthroughs + rendered
+  rubric (/review invokes it for UI-facing changes); **reconciler**
+  (opus) is the horizontal auditor — duplicate/seam/contract/convention
+  drift across modules, never inside the inner build/review loop;
+  `advisory` mode feeds a design before it's built, `scoped` mode gates
+  a parallel-build wave merge (/build wires it in) or runs on demand via
+  `/reconcile` (nudged by doctor Check 14), `full` mode runs inside
+  /healthcheck
+- **Skills reach agents:** the building and judging role agents (architect,
+  developer, tester, reviewer, researcher, ui-designer, ux-critic) carry the
+  `Skill` tool and are instructed to consult installed `.claude/skills/` packs
+  relevant to their task before working. The **verifier** and **reconciler**
+  do not carry `Skill` (their `tools:` lists omit it), so they work from the
+  code and evidence alone — opt-in, so absent skills are a silent no-op, never an
+  error. When a skill covers the task area it outranks the model's priors.
+  UI agents (ui-designer/ux-critic) name `design-taste` + `ui-verification`
+  as must-haves; code agents pull their stack/testing/security/docs skills.
 - The agent that writes code does NOT review it
+- The agent that produced a claim does NOT verify it — a doer's green
+  self-report is a defect gate, never the acceptance gate
 - If you discover a contract mismatch — STOP and flag it
 - Developers may tighten/clarify contracts inline; widening → escalate to Architect
-- `.claude/TASKS.md` has two lanes: **Feature** (full lifecycle) and **Bug-fix** (Reported → Fixing → Verify → Done)
+- `.claude/TASKS.md` has two lanes: **Feature** (Todo → In Progress → Ready for Review → Ready for Test → **Verify** → Done) and **Bug-fix** (Reported → Fixing → Verify → Done). `Verify` is the human-acceptance stage after Ready for Test.
 - Log bugs with [BUG-XXX] IDs, severity (P0-P3), and source reference
+- **Board entries are machine-read.** Task/bug entries are BRACKETED level-4 headings — `#### [TASK-N] Title` / `#### [BUG-N] Title`. The bracketed ID is canonical: downstream board tooling reads AND writes it. A bare `#### TASK-N` (no brackets) still PARSES — readers are widened per `contract:state-file-grammar` — but the `state-structure` doctor check flags it, so don't rely on it; a level-3 `### [TASK-N]` heading, by contrast, is read as a status section rather than an entry and is missed entirely. Preserve heading levels, the bracketed IDs, the `**Field:**` markers, and the `·` (U+00B7) separators in DECISIONS/GOTCHAS exactly — the `state-structure` doctor check (`.claude/framework/doctor/`) enforces this.
+
+## Verify Handback (NON-NEGOTIABLE)
+
+Delivered work is not reviewable until the human can verify it **one feature at a time**.
+Two rules close that loop — they are what turn a finished build into per-feature
+acceptance stories instead of a pile of code:
+
+- **One board task per user story / feature** — never bundle multiple features under a
+  single umbrella task. The 1:1 story→task mapping is what makes each feature its own
+  Verify story. (`/plan` step 4 sets this at task creation; `/build` step 1 guards it.)
+- **On Ready for Test, the Tester emits a verify-handback seed** — one
+  `.claude/console/verify/<TASK-ID>.json` per task, `items[]` = that feature's use-cases
+  (`contract:verify-handback`). GATED on `.claude/console/` existing (absent → skip, zero
+  coupling); WRITE-ONCE (never clobber a recorded human verdict). The human reviews these
+  in the **Verify** lifecycle stage; passing → Done. (`/test` does this.)
+- **Retroactive (batch / autonomous builds):** if many features were delivered under one
+  umbrella task (e.g. an overnight build), decompose AFTER THE FACT — create one board
+  task per delivered feature in the **Verify** section, then emit one seed each. This is
+  what turns "20 features" into 20 reviewable Verify stories. Do NOT leave delivered
+  features bundled under one task.
+
+Full contract + the forward and retroactive step-by-step:
+`.claude/framework/agent_docs/verify-handback.md`.
 
 ## Code Quality Rules
 
@@ -128,6 +262,11 @@ are loaded into the session context on cold start.
 - **Machine-readable contracts:** `.claude/ECOSYSTEM.md` contracts must include fenced code blocks
   anchored with `<!-- contract:ID status:stable -->`. Add one when you touch a contract area.
 - **Update conventions as you go:** New stable pattern → update code-conventions.md same commit
+- **Simplicity ladder + safety floor:** before adding code, a dependency, or a file,
+  apply *Simplicity First* (behavioral-principles §2) — take the smallest step that
+  solves the problem, and prefer reusing or removing over adding — but never weaken the
+  validation / error-handling / security floor in §2 or the prompt-injection / secrets /
+  no-autonomous-commit floor in §6–7.
 
 ## Code Navigation
 
@@ -137,9 +276,14 @@ are loaded into the session context on cold start.
 ## Reference Documents (read when relevant)
 
 - Requirements → .claude/framework/docs/requirements/
-- Specs → .claude/framework/docs/specs/
+- Specs (from `/analyse` → `/plan`; versioned/extended over the project's life) → .claude/framework/docs/specs/
+- Supplementary docs (inspiration / research / images / diagrams) → `docs/` — **deposit
+  material here as you work** (the Console surfaces the `docs/` tree under its Docs tab);
+  don't leave research / inspiration / diagrams only in chat. See `docs/README.md`.
 - Building → .claude/framework/agent_docs/building.md
 - Testing → .claude/framework/agent_docs/testing.md
+- Verify handback (per-feature review stories + the `contract:verify-handback` schema; forward + retroactive/batch procedure) → .claude/framework/agent_docs/verify-handback.md
+- Orchestrator state (optional `NOW.md` / `GROUND-TRUTH.md` / `PLAYBOOK.md` — the post-compaction boot set; quote-don't-paraphrase rule) → .claude/framework/agent_docs/orchestrator-state.md
 - Conventions → .claude/framework/agent_docs/code-conventions.md
 - Architecture → .claude/framework/agent_docs/architecture.md
 - Behavioral principles → .claude/framework/agent_docs/behavioral-principles.md
@@ -152,14 +296,49 @@ are loaded into the session context on cold start.
 Hooks honour two environment variables (resolved by `.claude/hooks/lib/hook-common.sh`):
 
 - `CLAUDE_HOOK_PROFILE=minimal|standard|strict` (default `standard`).
-  - **minimal** — only the destructive-command guard (`block-dangerous`) runs. Everything else is silenced. For low-context/local-model setups or quick throwaway work.
+  - **minimal** — only the safety-tier hooks run: the destructive-command guard (`block-dangerous`) and its health monitor (`guard-interpreter-check`). Everything else is silenced. For low-context/local-model setups or quick throwaway work.
   - **standard** — all shipped hooks run. This is the default; behaviour is unchanged from before the profile system existed.
   - **strict** — standard plus any hooks declared at the `strict` tier (reserved for future opt-in extra-strict checks).
 - `CLAUDE_DISABLED_HOOKS="format,lint"` — comma/space-separated list of stable hook IDs to turn off regardless of profile. An explicit disable always wins, even for safety-tier hooks.
 
-Stable hook IDs: `block-dangerous` (safety), `enforce-state`, `filter-test-output`, `drift-guard`, `format`, `lint`, `verify-deps`, `suggest-compact`, `cost-tracker`.
+Stable hook IDs: `block-dangerous` (safety), `enforce-state`, `filter-test-output`, `drift-guard`, `format`, `lint`, `verify-deps`, `suggest-compact`, `cost-tracker`, `reanchor`, `precompact-snapshot`, `postcompact-archive`, `checkpoint-watermark`, `console-heartbeat`, `console-autostart`, `guard-interpreter-check`, `session-start-marker` (`reanchor`/`precompact-snapshot`/`postcompact-archive`/`checkpoint-watermark` are the TASK-052 session-lifecycle hooks; see "Session Lifecycle" below and `contract:session-lifecycle`. `console-heartbeat` is the TASK-066 Console-integration hook — fires on UserPromptSubmit + PostToolUse to refresh this project's Console registry-entry mtime so the tray Hub never reaps a live session; instant no-op unless the project is opted in to the Console via `.console-version`/`.console-enabled`. `guard-interpreter-check` is a SessionStart guard-monitor that reports if `block-dangerous` has lost its Python interpreter; `session-start-marker` records HEAD at session start for re-anchor/diff. `console-autostart` is a SessionStart hook (TASK-115) that fire-and-forget starts a Console-opted-in project's console via `node tools/console.mjs start` so it comes up on cold boot without depending on the model executing step 10.5 — instant no-op unless opted in (`.console-version`/`.console-enabled`), fires only on `source∈{startup,resume}`, and never blocks session start).
 
-Legacy per-hook opt-outs still work and compose with the above: `CLAUDE_DEP_VERIFY=0` (skip dependency registry checks), `CLAUDE_DOTNET_FORMAT=1` / `CLAUDE_DOTNET_LINT=1` (opt into slow .NET tooling), `CLAUDE_SUGGEST_COMPACT_TURNS=N` (compaction-nudge cadence).
+Legacy per-hook opt-outs still work and compose with the above: `CLAUDE_DEP_VERIFY=0` (skip dependency registry checks), `CLAUDE_DOTNET_FORMAT=1` / `CLAUDE_DOTNET_LINT=1` (opt into slow .NET tooling), `CLAUDE_SUGGEST_COMPACT_TURNS=N` (compaction-nudge cadence). Session-lifecycle knobs: `CLAUDE_CONTEXT_WINDOW_TOKENS=N` (window size for the watermark % estimate; default 200000 — **set 1000000 on a [1m]-context session** or the checkpoint nudge fires immediately), `CLAUDE_CHECKPOINT_WATERMARK_PCT=N` (nudge threshold %, default 75).
+
+## Permission Gating (consumer-tunable)
+
+`settings.json` already denies reads/writes of secret paths and the
+`block-dangerous` hook guards destructive commands. To require an interactive
+confirm before a *specific* risky-but-allowed operation, tune the harness's own
+`permissions.ask` matrix — there is no need for a custom gate hook (the harness
+provides the approve/edit/deny prompt; the framework only feeds it patterns).
+Add an `ask` array alongside `allow`/`deny` in `.claude/settings.json`:
+
+    "permissions": {
+      "allow": [ ... ],
+      "ask": [
+        "Bash(git push --force:*)",
+        "Bash(git push --force-with-lease:*)",
+        "Bash(rm -rf:*)",
+        "Edit(**/migrations/**)"
+      ],
+      "deny": [ ... ]
+    }
+
+Each pattern prompts before that operation; everything else stays on the
+`allow`/`deny` decision. Prefer this over a bespoke `PreToolUse` gate hook,
+which would duplicate the harness permission engine for marginal gain. The
+safety floor stays in `block-dangerous` (non-tunable; heuristic
+defense-in-depth, not a security boundary — see README.md's "Hooks" section);
+`ask` is for project-specific "make me confirm this" cases.
+
+**Confirm the syntax for your version (UNVERIFIED here, per §4):** the
+permission lists (`allow`/`ask`/`deny`) are the harness's mechanism, but the
+exact matcher forms (`Bash(<cmd>:*)`, the `**/…` globs) are Claude Code-
+version-specific — check the Claude Code permissions documentation for your
+version before relying on the patterns above; treat them as illustrative.
+(`settings.json` is strict JSON — no comments; keep this matrix documented
+here, not inline.)
 
 ## MCP Servers
 
@@ -168,7 +347,11 @@ Legacy per-hook opt-outs still work and compose with the above: `CLAUDE_DEP_VERI
 
 ## Framework Feedback
 
-- Log framework improvement ideas in `.claude/FRAMEWORK-SUGGESTIONS.md` (reviewed separately)
+- Log framework improvement ideas in `.claude/FRAMEWORK-SUGGESTIONS.md`. If you
+  adopted this framework, those ideas only help if they reach its maintainers —
+  this file is local to your project. Contribute them back upstream (open an
+  issue/PR at the `FRAMEWORK_UPSTREAM_URL` in `.claude/.framework-version`) so
+  every project benefits; see that file's header.
 
 ## Context Awareness (NON-NEGOTIABLE)
 
@@ -177,3 +360,45 @@ Legacy per-hook opt-outs still work and compose with the above: `CLAUDE_DEP_VERI
 - If context > 60% with tasks remaining: suggest a fresh session
 - When compacting: preserve modified files, task status, current decisions
 - Use subagents for research-heavy work (their context is separate)
+
+## Session Lifecycle (NON-NEGOTIABLE)
+
+Disk is the source of truth. The job at every session boundary is to make sure
+nothing important lives only in the volatile context window. There are four
+named moments — and the rule depends on **what is in the window when you
+re-ground**: an EMPTY window (cold start, `/clear`) means disk is canonical
+automatically (nothing competes); a SUMMARY window (auto-compaction) means
+competing in-context state exists, so you must **reconcile**, not blindly trust
+either side.
+
+- **Checkpoint** (during a run) — at natural breakpoints, or when context is
+  large, flush your in-flight working-set to a `## WIP` section in
+  `claude-progress.txt`: current task, what's done, what's next, key decisions.
+  This is the load-bearing habit — it keeps disk close to your working memory so
+  a compaction can't eat much. The `checkpoint-watermark` hook nudges you as the
+  window fills, but the discipline is yours; the hook only reminds.
+- **Handoff** (`/wrapup`) — externalise everything important to the state files,
+  commit, and **push**. The push is what makes a cold start on another machine
+  correct: no push = no handoff.
+- **Rehydrate** (cold start) — empty window, new machine or fresh session.
+  `git pull` first (the cold start's first step), then rebuild entirely from disk per the
+  Cold Start Sequence. EMPTY context → disk is canonical, nothing competes.
+- **Re-anchor / Reconcile** (after an auto-compaction, same session) — a
+  model-generated SUMMARY is now in your context and **may be lossy or wrong**.
+  Treat the state files as canonical for *committed* facts (decisions, contracts,
+  task lifecycle); the summary is the *only* record of *in-flight* work since
+  your last Checkpoint, and may be fresher than disk. So **reconcile**: re-read
+  the state files (including any `## WIP`), run `git status` / `git diff` to see
+  actual in-flight work, and trust files + the live repo over the summary where
+  they disagree. **Do not** discard the summary ("disk wins") and **do not**
+  trust it blindly. The `session-reanchor` hook injects this directive on
+  `SessionStart(source=compact)`, but this standing rule is the authority — act
+  on it whenever a compaction summary is present, hook or no hook.
+- **Manual compaction** (`/pre-compact` → `/compact` → `/post-compact`) — a deliberate
+  mid-session window clear (you want a clean window before a long build *without* ending the
+  session). `/pre-compact` is a deliberate **Checkpoint** — flush the working-set to `## WIP`;
+  no commit (the session continues); it does NOT stop the Console. `/post-compact` is the
+  **Re-anchor/Reconcile** above, run explicitly after the compact (re-read disk, `git diff`,
+  reconcile against the lossy summary). The `session-reanchor` hook covers AUTO-compaction;
+  these two commands are the manual counterpart (no copy-paste prompt — the command IS the
+  rehydrate).

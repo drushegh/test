@@ -65,9 +65,9 @@ Details: [references/plugins.md](references/plugins.md).
 ## Tooling
 
 ```bash
-pac auth create --environment <url>     # authenticate (never hand-rolled tokens)
+pac auth create --environment ORGURL     # authenticate (never hand-rolled tokens)
 pac org who                             # verify target before anything
-pac solution list --environment <url>
+pac solution list --environment ORGURL
 pac plugin init                         # scaffold plug-in project
 pac pcf init                            # scaffold PCF component
 ```
@@ -86,8 +86,17 @@ genuinely lacks coverage. Tool hierarchy and casing traps:
   (`new_AccountId@odata.bind`) — wrong casing 400s.
 - **`MSCRM.SolutionName` header misspelled** → components silently land
   in the Default solution. Always verify components after creation.
+- **Metadata updates are `PUT` of the full definition + `MSCRM.MergeLabels:
+  true`** — PATCH 405s, and omitting the header deletes other-language
+  labels. Publish once at the end; retry transient 429/503/`0x80071151`.
+- **System Administrator bypasses row-level security** (and plug-ins run
+  as the calling user, not elevated). Verify any security behaviour as a
+  non-admin persona via impersonation, never as the admin.
+- **Lookups**: write with `<Nav>@odata.bind`, never `_x_value` (400);
+  `_x_value` only returns when `$select`ed; URL-encode `$filter` string
+  literals or find-or-create scripts make duplicates.
 - **Early-bound `Target` writes** — read via
-  `context.InputParameters["Target"].ToEntity<T>()` is fine; assigning an
+  `context.InputParameters["Target"].ToEntity()` is fine; assigning an
   early-bound entity back into InputParameters throws
   `SerializationException`.
 - **Unsupported client scripting** — direct DOM manipulation, undocumented
@@ -123,5 +132,7 @@ genuinely lacks coverage. Tool hierarchy and casing traps:
 | Plug-ins: pipeline, context, images, registration, transactions, debugging | [references/plugins.md](references/plugins.md) |
 | Form scripting: formContext, events, notifications, web resources | [references/client-scripting.md](references/client-scripting.md) |
 | PCF code components: lifecycle, manifest, WebApi, packaging | [references/pcf.md](references/pcf.md) |
-| Queries, data ops, metadata, casing rules, publisher discipline | [references/dataverse-operations.md](references/dataverse-operations.md) |
+| Queries, lookups, metadata updates (PUT), retries, casing, publisher discipline | [references/dataverse-operations.md](references/dataverse-operations.md) |
 | Solutions: export/import, components, validation, security roles | [references/solutions-alm.md](references/solutions-alm.md) |
+| Security testing, impersonation, team ownership, custom-role privilege baseline | [references/security-model.md](references/security-model.md) |
+| Forms/views/app modules built in code, quick views, Word templates | [references/model-driven-apps.md](references/model-driven-apps.md) |

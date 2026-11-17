@@ -50,12 +50,18 @@ exactly the pieces they need:
 ```tsx
 const ComposerContext = createContext<ComposerContextValue | null>(null);
 
+function useComposer(): ComposerContextValue {
+  const ctx = use(ComposerContext);
+  if (!ctx) throw new Error("Composer.* must be rendered inside <Composer.Provider>");
+  return ctx;
+}
+
 function ComposerFrame({ children }: { children: React.ReactNode }) {
   return <form>{children}</form>;
 }
 
 function ComposerInput() {
-  const { state, actions: { update }, meta: { inputRef } } = use(ComposerContext);
+  const { state, actions: { update }, meta: { inputRef } } = useComposer();
   return (
     <TextInput
       ref={inputRef}
@@ -66,7 +72,7 @@ function ComposerInput() {
 }
 
 function ComposerSubmit() {
-  const { actions: { submit } } = use(ComposerContext);
+  const { actions: { submit } } = useComposer();
   return <Button onPress={submit}>Send</Button>;
 }
 
@@ -144,7 +150,7 @@ function ForwardMessageDialog() {
 }
 
 function ForwardButton() {
-  const { actions: { submit } } = use(ComposerContext);
+  const { actions: { submit } } = useComposer();
   return <Button onPress={submit}>Forward</Button>;
 }
 ```

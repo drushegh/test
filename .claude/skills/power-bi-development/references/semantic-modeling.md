@@ -75,8 +75,9 @@
 - `USERELATIONSHIP` is blocked on RLS-bearing relationships.
 - OLS (object-level security) hides tables/columns per role — breaks any
   visual referencing the hidden object, so pair with report design.
-- Workspace roles trump RLS: members/admins bypass it; RLS applies to
-  viewers and app consumers only.
+- Workspace roles trump RLS: Admin, Member **and Contributor** bypass it
+  (they can edit the model); RLS applies only to Viewers (including
+  Viewers with Build) and app/shared-content consumers.
 
 ## Storage modes
 

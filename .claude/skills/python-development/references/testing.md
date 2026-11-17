@@ -8,7 +8,7 @@ API, database server, or the internet.
 | Type | Purpose | Tools |
 |---|---|---|
 | Unit | Business logic | pytest |
-| Integration | API endpoints | pytest + httpx `TestClient`/`AsyncClient` |
+| Integration | API endpoints | pytest + framework `TestClient` (Starlette/FastAPI, httpx-based) or httpx `AsyncClient` + `ASGITransport` |
 | E2E | Full workflows | pytest + test DB |
 
 ## Core Patterns
@@ -80,4 +80,4 @@ def db_session():
 - Test both the failure case and that the normal path still works.
 - Test names describe behaviour: `test_transform_handles_zero_count`.
 - Coverage: `pytest --cov=mypackage --cov-report=term-missing` — focus on
-  critical paths
+  critical paths and branches over a headline percentage.

@@ -40,6 +40,10 @@ skills) supplies the concrete sink list used in reviews.
    queries always; context-appropriate encoding (HTML/attribute/URL/JS)
    at output time; allow-lists over deny-lists; canonicalise before
    validating paths. Sinks list: `references/input-output-crypto.md`.
+   Before trusting any validator, path/URL check, "sandbox" or
+   per-instance rate limiter, check it against
+   `references/bypass-pitfalls.md` — deny-lists, `startsWith` checks
+   and `exec` with empty builtins are routinely bypassed.
 2. **No secrets in code, config files in repos, logs, or prompts.**
    Key Vault/equivalent + managed identities; rotate on exposure;
    pre-commit secret scanning. A leaked secret is an incident, not a
@@ -90,8 +94,8 @@ linting/SAST + secret scanning + SCA in CI (tooling choices →
 `devops-development`). Test: security test cases from the threat
 model; DAST where exposed. Release: dependency + artefact provenance.
 Operate: logging/alerting hooks (→ `sentinel-development`), incident
-path, patch cadence. Evidence at each stage is what tenders and NIS2
-audits ask for.
+path, patch cadence. Evidence at each stage is what audits and NIS2
+assessments ask for.
 
 ## References
 
@@ -100,6 +104,7 @@ audits ask for.
 | `references/owasp-frameworks.md` | Top 10:2025 detail, ASVS 5.0 usage, cheat sheet index |
 | `references/threat-modelling.md` | STRIDE, data-flow diagrams, session facilitation |
 | `references/input-output-crypto.md` | Injection/XSS defence, sinks, secrets, crypto rules |
+| `references/bypass-pitfalls.md` | Reviewing validators, Windows path/URL checks, sandboxes, serverless rate limits, service-role/RLS boundaries |
 | `references/supply-chain.md` | Dependencies, SBOM, build integrity, A03/A08 |
 | `references/nis2.md` | NIS2 scope and developer-relevant obligations (incl. Irish status) |
 | `references/gdpr.md` | Privacy by design for developers: minimisation, retention, DSR-ready models |
@@ -111,6 +116,12 @@ audits ask for.
   (`pipeline-security.md`).
 - Azure platform security (Entra, network, Defender for Cloud) →
   `azure-development`.
+- Authentication and authorisation engineering depth — OAuth 2.0/2.1 and
+  OIDC flow selection, token validation and rotation, sessions vs tokens and
+  browser-auth (cookies/CSRF/BFF), MFA/passkeys, SSO (SAML/OIDC/SCIM), and
+  RBAC/ABAC/ReBAC models → `identity-development`; this skill owns the broader
+  OWASP/ASVS frame, threat modelling, crypto and password-*hashing* hygiene,
+  and supply chain.
 - SIEM detections and SOC automation → `sentinel-development`.
 - Per-language secure-coding refs already exist in each language
   skill — this skill is the cross-cutting framework layer.

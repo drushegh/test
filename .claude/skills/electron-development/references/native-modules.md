@@ -8,7 +8,7 @@ packaged-app test.
 | Module | Purpose | Notes |
 |---|---|---|
 | `better-sqlite3` | SQLite | needs rebuild; needs `sandbox: false` if loaded via preload chain |
-| `keytar` | OS keychain | macOS needs keychain entitlements |
+| `keytar` | OS keychain | **Archived/unmaintained** — prefer built-in `safeStorage` for new code; macOS needs keychain entitlements |
 | `sharp` | images | large multi-platform binaries |
 | `node-pty` | terminals | platform-specific |
 
@@ -39,8 +39,8 @@ esbuild electron/main.ts --bundle --platform=node \
 ## 2. Rebuild for Electron
 
 ```bash
-npm i -D electron-rebuild
-npx electron-rebuild -f -w better-sqlite3
+npm i -D @electron/rebuild          # the unscoped `electron-rebuild` package is deprecated
+npx electron-rebuild -f -w better-sqlite3   # bin name is unchanged
 ```
 
 ```json

@@ -29,9 +29,11 @@ later step runs in memory.
 | `Table.Group` → GROUP BY | complex `each` expressions |
 | `Table.RenameColumns` → aliases | anything after a fold-breaker |
 
-- `Table.TransformColumnTypes` **frequently breaks folding** for
-  text→number/date on SQL sources — `Table.TransformColumns` with
-  explicit converters (`Number.From`) folds more reliably.
+- `Table.TransformColumnTypes` usually **folds** on SQL sources (it
+  becomes a `CAST`/`CONVERT`); conversions with a culture/locale argument
+  or source-specific type quirks can stop it. `Table.TransformColumns`
+  with custom `each` converters folds *less* reliably. Don't trust either
+  rule — confirm with the folding indicators / View Native Query.
 - Order of operations: filter rows and select columns **first** (they
   fold), custom columns and M-only transforms **last**.
 - Verify folding: right-click step → View Native Query (greyed out =

@@ -61,6 +61,52 @@ Enemy; player hurtbox (Area) masks EnemyHitbox; pickups mask Player
 only. Misconfigured masks are the #1 "collision doesn't work" cause —
 check both sides see each other.
 
+`Area.body_entered` fires only when the body's `collision_layer`
+intersects the area's `collision_mask`. A body you never configured
+sits on **layer 1** by default, so zones that mask a "Player" layer 2
+never see it. The boot is clean and nothing happens. Assign every
+body's layer explicitly from the table, and verify the trigger fires at
+runtime (a print in the handler), not by reading the `.tscn`.
+
+## Mutating physics from physics callbacks
+
+Inside `body_entered`/`area_entered` (and other signals emitted while
+the server is flushing queries), changing monitoring, shapes or the
+tree throws **"Can't change this state while flushing queries. Use
+call_deferred() or set_deferred() …"**. It can repeat hundreds of
+times per session and never crash, so grep play logs for it.
+
+```gdscript
+func _on_body_entered(body: Node3D) -> void:
+	set_deferred("monitoring", false)          # not: monitoring = false
+	var fx: Node3D = burst_scene.instantiate()
+	fx.position = global_position              # set BEFORE the deferred add
+	get_parent().add_child.call_deferred(fx)
+```
+
+## Navigation-driven kinematic NPCs
+
+A `CharacterBody3D` following a `NavigationAgent3D` must:
+
+- flatten the chase direction to XZ
+  (`var dir := agent.get_next_path_position() - global_position;
+  dir.y = 0.0`), because the navmesh surface sits slightly above the
+  floor and a 3D direction makes the NPC climb and hover;
+- own `velocity.y` itself (gravity + `is_on_floor()`), driving only
+  `velocity.x/z` from the path.
+
+Procedural navmesh without a visual mesh: fill a
+`NavigationMeshSourceGeometryData3D` with
+`set_vertices(PackedFloat32Array)` (flat x,y,z,x,y,z…) and
+`set_indices(PackedInt32Array)` (or `append_arrays` / `add_faces`),
+then `NavigationServer3D.bake_from_source_geometry_data[_async]`.
+Recast keeps only faces whose normal is within `agent_max_slope` of
+up, so wind floor triangles for a +Y normal. **If the bake comes back
+empty, flip the winding first.** `add_mesh()` takes a `Mesh`, and one
+project found it re-triggered the runtime mesh-parse performance
+warning it was meant to avoid (verify). Prefer raw arrays for
+procedural sources.
+
 ## Queries and raycasts
 
 - `RayCast2D/3D` nodes for persistent rays (ground checks, line of

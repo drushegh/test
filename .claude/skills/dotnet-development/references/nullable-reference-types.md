@@ -53,13 +53,18 @@ guess.
   `x != null`) — metadata-only, removes downstream `!`.
 - **`Debug.Assert(x != null)`** informs flow analysis but is stripped in
   Release — public API boundaries need `ArgumentNullException.ThrowIfNull`.
-- **Unconstrained generics**: `[return: MaybeNull] T`, not `T?` (which
-  turns value types into `Nullable<T>`, changing the signature).
+- **Unconstrained generics** (C# 9+): write `T?` — on an *unconstrained*
+  `T` it means "may be `default`" and does **not** become `Nullable<T>`
+  for value types (`FirstOrDefault<int>` still returns `int`). Only with a
+  `where T : struct` constraint does `T?` mean `Nullable<T>`. The older
+  `[return: MaybeNull] T` / `[AllowNull]` attributes are for C# 8 code or
+  when you need the pre-/post-condition split.
 - **LINQ `Where(x => x != null)` does not narrow** — use `.OfType<T>()`.
 - **`Equals(object?)` overrides**: add `[NotNullWhen(true)]`; reference
   types implement `IEquatable<T?>`.
-- **`?` on value types changes the runtime type** (`Nullable<T>`) — only
-  for reference types is `?` metadata-only.
+- **`?` on a concrete value type changes the runtime type** (`int?` is
+  `Nullable<int>`) — for reference types (and unconstrained `T?`) it is
+  metadata-only.
 
 ## DTOs vs Domain Models — where migrations go wrong
 

@@ -1,7 +1,10 @@
-# Azure AI Foundry
+# Microsoft Foundry
 
-Microsoft's platform for models, agents, and AI app lifecycle —
-formerly "Azure AI Studio"; Azure OpenAI deployments now live under it.
+Microsoft's platform for models, agents, and AI app lifecycle — renamed
+from "Azure AI Foundry" to **Microsoft Foundry** at Ignite (Nov 2025);
+before that it was "Azure AI Studio". Older docs, SDK package names and
+portal URLs still say "Azure AI Foundry"/"AI Studio" — same product.
+Azure OpenAI deployments now live under it.
 Grounded in microsoft/skills' microsoft-foundry skill (official,
 deep — install it for hands-on Foundry automation; this file is the
 working map).
@@ -57,7 +60,7 @@ graders before trusting them.
   more than the model choice.
 - Content safety / RAI policies apply per deployment; log prompts and
   completions (App Insights) within data-handling rules — relevant for
-  public-sector clients.
+  regulated clients.
 - Cost: tokens are the unit; cache aggressively, cap max tokens, use
   small models where evals say they suffice — model right-sizing is the
   AI cost lever.

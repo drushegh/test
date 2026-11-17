@@ -66,7 +66,7 @@ SPFx release notes on MS Learn.
   backgrounds.
 - Accessibility: keyboard operability and ARIA on custom controls;
   property pane controls included. Detailed a11y standards →
-  `accessibility-development` (sibling skill) once available.
+  `accessibility-development` (sibling skill).
 - Cache where data tolerates it (PnPjs caching, sessionStorage) — page
   loads multiply web part renders.
 

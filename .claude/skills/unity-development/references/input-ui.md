@@ -76,6 +76,7 @@ query/manipulate via C#:
 ```csharp
 var root = GetComponent<UnityEngine.UIElements.UIDocument>().rootVisualElement;
 var healthBar = root.Q<UnityEngine.UIElements.ProgressBar>("health-bar");
+healthBar.lowValue = 0f; healthBar.highValue = 1f; // default range is 0–100
 healthBar.value = 0.75f;
 root.Q<UnityEngine.UIElements.Button>("pause").clicked += OnPause;
 ```

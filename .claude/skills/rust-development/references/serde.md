@@ -17,9 +17,13 @@ struct ApiResponse {
 }
 ```
 
-**Always `#[serde(default)]` on `Option<T>` where the key may be absent**
-("the tests pass without it" means your test data includes the key — real
-APIs omit keys). **Always pair with `skip_serializing_if`** — otherwise
+**Missing key on a plain `Option<T>` field already deserialises to `None`**
+— serde's derive special-cases `Option`, so `#[serde(default)]` is not
+required there. It becomes required when the field also has
+`deserialize_with`/`with` (the special case is lost and an absent key
+errors) — and "the tests pass without it" then only means your test data
+includes the key. Writing it anyway is harmless documentation for
+concrete `T`. **Pair with `skip_serializing_if`** on output — otherwise
 `None` serialises as `"field": null`, inflating payloads and breaking
 PATCH semantics.
 
@@ -119,3 +123,12 @@ nothing. **Never `_`-prefix a field to silence dead_code** — serde derives
 the wire key from the identifier, so `_field` expects `"_field"` in the
 JSON and deserialisation silently breaks. Delete the field and document
 the full schema in a comment.
+
+## Trailing Content
+
+`serde_json::from_str` / `from_slice` reject anything after the first
+value (`trailing characters` error) — a log line with a suffix, or
+several concatenated JSON documents. Parse a prefix with
+`let mut de = serde_json::Deserializer::from_str(s); T::deserialize(&mut de)?`
+(skip `de.end()`), or iterate a stream of values with
+`Deserializer::from_str(s).into_iter::<T>()`.

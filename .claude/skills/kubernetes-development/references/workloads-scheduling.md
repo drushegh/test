@@ -43,7 +43,10 @@ readiness probe so a rollout waits for genuinely-ready pods.
 - **Targeting nodes**: `nodeSelector`/`nodeAffinity` for node classes (GPU,
   spot); **taints + tolerations** to reserve nodes for specific workloads.
 - **PodDisruptionBudget**: cap voluntary disruption so drains/upgrades can't
-  take all replicas.
+  take all replicas. Size it *below* the replica count — `minAvailable` equal
+  to replicas (e.g. 2 of 2) allows zero evictions and blocks node drains and
+  cluster upgrades indefinitely. The example assumes ≥3 replicas; for small
+  or autoscaled deployments prefer `maxUnavailable: 1`.
 
 ```yaml
 apiVersion: policy/v1

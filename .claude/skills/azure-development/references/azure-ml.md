@@ -69,7 +69,7 @@ multiple deployments behind one stable scoring URI.
 - CI/CD for training and deployment → `devops-development`; data prep at scale
   → `fabric-development` / `sql-development`.
 - Use the **Responsible AI** dashboard (fairness, error analysis,
-  interpretability) where decisions affect people — relevant to public-sector
+  interpretability) where decisions affect people — relevant to regulatory
   obligations (EU AI Act → `secure-development`).
 
 ## Boundary: Azure ML vs AI Foundry

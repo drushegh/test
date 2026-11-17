@@ -45,13 +45,21 @@ leak permissions to unrelated windows/webviews.
         {
             "identifier": "shell:allow-execute",
             "allow": [
-                { "name": "git", "args": true },
-                { "name": "npm", "args": ["install", "run"] }
+                { "name": "git-status", "cmd": "git", "args": ["status", "--porcelain"] },
+                { "name": "npm-run", "cmd": "npm", "args": ["run", { "validator": "^[a-z:-]+$" }] }
             ]
         }
     ]
 }
 ```
+
+Each shell scope entry needs a `name` (the handle the frontend passes to
+`Command.create`), the `cmd` binary, and `args`. `args` is positional:
+an array lists the exact arguments in order (a string is fixed, a
+`{ "validator": "<regex>" }` object is a checked dynamic slot), so
+`["run", {...}]` allows `npm run <script>` and nothing else. `"args": true`
+allows **any** arguments — for `git` that means `-c core.sshCommand=...`
+and `clone`/`push` to anywhere, i.e. unrestricted execution. Avoid it.
 
 `fs`, `http`, and `shell` must always be scoped — a blanket
 `fs:default`-style grant for the whole filesystem or any URL is the
@@ -79,7 +87,7 @@ runtime failure.** Always pair install + permission + verify.
 ## Platform-Specific and Remote
 
 ```json
-{ "identifier": "desktop-only", "platforms": ["linux", "macos", "windows"],
+{ "identifier": "desktop-only", "platforms": ["linux", "macOS", "windows"],
   "permissions": ["global-shortcut:default"] }
 ```
 
@@ -87,6 +95,9 @@ runtime failure.** Always pair install + permission + verify.
 { "identifier": "remote-api", "remote": { "urls": ["https://*.myapp.com"] },
   "permissions": ["http:default"] }
 ```
+
+Valid `platforms` values are case-sensitive: `linux`, `macOS`, `windows`,
+`android`, `iOS`.
 
 Remote access lets pages from those URLs call Tauri commands — grant with
 extreme care; default is local-only.
@@ -112,9 +123,36 @@ Reference as `"custom:allow-home-documents"` in capabilities.
 In `tauri.conf.json` → `app.security`:
 
 - **CSP**: `"csp": "default-src 'self'; img-src 'self' data:"` — keep
-  tight; loosen per-source deliberately.
-- **assetScope**: which local paths the `asset:` protocol may serve
-  (`"assetScope": ["$APPDATA/assets/**"]`).
+  tight; loosen per-source deliberately. If you use the asset protocol,
+  its origins must be allowed too: `img-src 'self' asset: http://asset.localhost`
+  (the second origin is what Windows/Android serve it as).
+- **assetProtocol**: off by default; `"assetProtocol": { "enable": true,
+  "scope": ["$APPDATA/assets/**"] }` enables it and limits which local
+  paths it may serve (the `tauri` crate needs the `protocol-asset` feature).
+  v1's `assetScope` key does not exist in v2.
+
+## Webviews That Load Other Content
+
+Tauri 2 injects `window.__TAURI_INTERNALS__` (the IPC bridge and invoke
+key) into every top-level webview, and **app commands registered in
+`generate_handler!` are callable from every window and webview of the
+app** unless you restrict them with an app manifest (`AppManifest::commands`
+in `build.rs`, then grant them per capability). Remote origins are denied
+IPC by default, but pages served from the app's own origin are not.
+Consequences for preview / mini-browser panes:
+
+- Never let a preview window load the app's own origin or dev-server port
+  (`http://localhost:<devPort>`, `tauri://localhost`) — that page gets
+  full command access.
+- Add `on_navigation` / `on_new_window` guards (webviews-and-windows.md)
+  so untrusted pages can't steer a webview onto a local origin or spawn
+  new windows.
+- Bind capabilities to window labels, and give preview windows labels no
+  capability matches.
+- Rust-side HTTP through `tauri_plugin_http::reqwest` is plain reqwest:
+  the `http:` capability scope constrains only the **JS** API. Validate
+  the scheme/host yourself before fetching a URL that came from the
+  frontend.
 
 ## Review Checklist
 

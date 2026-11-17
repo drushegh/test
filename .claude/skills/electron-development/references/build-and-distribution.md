@@ -89,11 +89,16 @@ npx electron-builder --mac --win --linux
   notarisation (env: `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`,
   `APPLE_TEAM_ID`, or an API key). Typical entitlements for
   Electron: `allow-jit`, `allow-unsigned-executable-memory`; add
-  keychain groups for keytar.
+  keychain-access-groups only if still using the archived keytar
+  (`safeStorage` needs none).
 - **Windows**: OV/EV code-signing cert or SmartScreen flags every
-  install. Configure via electron-builder `win.certificateSubjectName`/
-  env vars; cloud signing (Azure Trusted Signing etc.) increasingly
-  standard for CI.
+  install. electron-builder 26: signtool settings live under
+  `win.signtoolOptions` (`certificateSubjectName`, `certificateFile`,
+  `signingHashAlgorithms`, …) or `CSC_LINK`/`CSC_KEY_PASSWORD` env vars;
+  the old top-level `win.certificateSubjectName` etc. no longer apply.
+  Azure Trusted Signing → `win.azureSignOptions` (mutually exclusive with
+  `signtoolOptions`). v27 (alpha) reshapes this again into `win.sign` —
+  check the docs for the version you pin.
 - **Linux**: no signing gate; pick targets per audience.
 - Keys/certs via CI secrets only — never in the repo.
 

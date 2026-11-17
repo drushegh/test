@@ -1,6 +1,14 @@
 {
   "permissions": {
-    "allow": ["Read", "Edit", "Write", "Bash", "Grep", "Glob", "Agent"],
+    "allow": [
+      "Read",
+      "Edit",
+      "Write",
+      "Bash",
+      "Grep",
+      "Glob",
+      "Agent"
+    ],
     "deny": [
       "Read(.env)",
       "Read(.env.*)",
@@ -37,6 +45,14 @@
           {
             "type": "command",
             "command": "bash -c 'cd \"$CLAUDE_PROJECT_DIR\" && bash .claude/hooks/framework-drift-guard.sh'"
+          },
+          {
+            "type": "command",
+            "command": "bash -c 'cd \"$CLAUDE_PROJECT_DIR\" && bash .claude/hooks/checkpoint-watermark.sh'"
+          },
+          {
+            "type": "command",
+            "command": "bash -c 'cd \"$CLAUDE_PROJECT_DIR\" && bash .claude/hooks/console-heartbeat.sh'"
           }
         ]
       }
@@ -52,6 +68,19 @@
           {
             "type": "command",
             "command": "bash -c 'cd \"$CLAUDE_PROJECT_DIR\" && bash .claude/hooks/filter-test-output.sh'"
+          },
+          {
+            "type": "command",
+            "command": "bash -c 'cd \"$CLAUDE_PROJECT_DIR\" && _lib=\".claude/hooks/lib/hook-common.sh\"; [ -f \"$_lib\" ] && . \"$_lib\"; PY=\"\"; if command -v resolve_python >/dev/null 2>&1; then PY=$(resolve_python python3 python) || PY=\"\"; else PY=$(command -v python3 || command -v python || true); fi; if [ -n \"$PY\" ]; then \"$PY\" .claude/hooks/block-dangerous-commands.py; else echo \"block-dangerous-commands guard SKIPPED: no working Python interpreter found on PATH - this command was NOT screened for destructive patterns\" >&2; exit 1; fi'"
+          }
+        ]
+      },
+      {
+        "matcher": "PowerShell|Monitor",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash -c 'cd \"$CLAUDE_PROJECT_DIR\" && _lib=\".claude/hooks/lib/hook-common.sh\"; [ -f \"$_lib\" ] && . \"$_lib\"; PY=\"\"; if command -v resolve_python >/dev/null 2>&1; then PY=$(resolve_python python3 python) || PY=\"\"; else PY=$(command -v python3 || command -v python || true); fi; if [ -n \"$PY\" ]; then \"$PY\" .claude/hooks/block-dangerous-commands.py; else echo \"block-dangerous-commands guard SKIPPED: no working Python interpreter found on PATH - this command was NOT screened for destructive patterns\" >&2; exit 1; fi'"
           }
         ]
       }
@@ -65,6 +94,18 @@
             "command": "bash -c 'cd \"$CLAUDE_PROJECT_DIR\" && bash .claude/hooks/post-edit-dispatch.sh'"
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash -c 'cd \"$CLAUDE_PROJECT_DIR\" && bash .claude/hooks/checkpoint-watermark.sh'"
+          },
+          {
+            "type": "command",
+            "command": "bash -c 'cd \"$CLAUDE_PROJECT_DIR\" && bash .claude/hooks/console-heartbeat.sh'"
+          }
+        ]
       }
     ],
     "Stop": [
@@ -74,6 +115,48 @@
           {
             "type": "command",
             "command": "bash -c 'cd \"$CLAUDE_PROJECT_DIR\" && bash .claude/hooks/enforce-state-update.sh'"
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash -c 'cd \"$CLAUDE_PROJECT_DIR\" && bash .claude/hooks/session-reanchor.sh'"
+          },
+          {
+            "type": "command",
+            "command": "bash -c 'cd \"$CLAUDE_PROJECT_DIR\" && bash .claude/hooks/guard-interpreter-check.sh'"
+          },
+          {
+            "type": "command",
+            "command": "bash -c 'cd \"$CLAUDE_PROJECT_DIR\" && bash .claude/hooks/session-start-marker.sh'"
+          },
+          {
+            "type": "command",
+            "command": "bash -c 'cd \"$CLAUDE_PROJECT_DIR\" && bash .claude/hooks/console-autostart.sh'"
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash -c 'cd \"$CLAUDE_PROJECT_DIR\" && bash .claude/hooks/precompact-snapshot.sh'"
+          }
+        ]
+      }
+    ],
+    "PostCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash -c 'cd \"$CLAUDE_PROJECT_DIR\" && bash .claude/hooks/postcompact-archive.sh'"
           }
         ]
       }

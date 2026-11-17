@@ -59,7 +59,10 @@ on a calendar.
   stages), webhooks (unverified callers), file uploads (path,
   content type, size, processing), admin tooling, CI/CD itself
   (→ `supply-chain.md`), LLM features (prompt injection = untrusted
-  input crossing into a privileged tool-calling context).
+  input crossing into a privileged tool-calling context). For LLM
+  features, fetch Appendix B of the OWASP LLM Top 10 2026 (architecture
+  and threat modelling) and cite threats as `LLM0x:2026`
+  (`owasp-frameworks.md`).
 
 ## Cloud/Microsoft-stack notes
 

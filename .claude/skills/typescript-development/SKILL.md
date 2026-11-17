@@ -77,7 +77,7 @@ In an existing repo, never weaken compiler options to make an error go away.
   nullish coalescing** (`user?.profile?.name ?? "Unknown"`) over manual
   null checks; **`import type`** for type-only imports.
 - **Schema-first validation**: define the Zod schema, derive the type with
-  `z.infer<typeof Schema>` — never write the type twice.
+  `z.infer` of the schema — never write the type twice.
 
 ## Tooling
 
@@ -91,7 +91,16 @@ prettier --write .            # (not needed if using Biome)
 vitest run                    # tests
 ```
 
-Run checks in order — typecheck, lint, test — to fail fast. Details and the
+Run checks in order — typecheck, lint, test — to fail fast.
+
+**A green bare `tsc` can be a lie.** Vite-style repos ship a root
+`tsconfig.json` that is references-only (`"files": []` plus
+`"references"`), so `tsc --noEmit` from the root checks nothing and exits 0.
+Type-check with the project's own script (`npm run typecheck`), `tsc -b`, or
+`tsc -p tsconfig.app.json` — and run it from the package directory (from a
+monorepo root, `npx tsc` can print "This is not the tsc command you are
+looking for"). Never report "tsc clean" from a scoped Vitest run either:
+esbuild strips types without checking them. Details and the
 Bun/tsgo/Biome/Turborepo fast stack: [references/tooling.md](references/tooling.md).
 
 ## Decision Rules
@@ -132,6 +141,15 @@ const data = Schema.parse(await res.json());   // not: as MyType
 // 5. Async functions passed where void expected (event handlers,
 //    forEach) silently swallow rejections — wrap with try/catch
 ```
+
+- **Case-variant file names** (`Foo.tsx` next to `foo.ts`) break `tsc` on
+  case-insensitive file systems (TS1261/TS1149 casing errors) while Vite
+  resolves happily. Never name a module as a case-variant of a sibling.
+- **`Intl` output is runtime- and ICU-dependent**: unsupported locales fall
+  back silently (check `Intl.DateTimeFormat.supportedLocalesOf([tag])`
+  first), and CLDR data changes between Node/browser versions (`en-GB` short
+  September is "Sept" on current ICU). For fixed display strings, use an
+  explicit table and pin it in a test.
 
 Also forbidden: mutating props/state in React, hardcoded secrets (use
 validated `process.env`), `dangerouslySetInnerHTML` with unsanitised input,

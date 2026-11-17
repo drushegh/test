@@ -41,6 +41,10 @@ profile.
 
 ```bash
 # License activation varies (Personal/Pro/build-server licensing) — see docs
+# `unity-editor` is the wrapper in GameCI Docker images; elsewhere use the
+# Hub-installed editor binary, e.g. UNITY="/Applications/Unity/Hub/Editor/<ver>/Unity.app/Contents/MacOS/Unity"
+# (macOS), "C:/Program Files/Unity/Hub/Editor/<ver>/Editor/Unity.exe" (Windows),
+# "$HOME/Unity/Hub/Editor/<ver>/Editor/Unity" (Linux)
 unity-editor \
   -batchmode -nographics -quit \
   -projectPath "$PROJECT_DIR" \

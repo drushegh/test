@@ -37,7 +37,9 @@ try {
     }
 }
 catch {
-    Write-Error "Failed: $($_.Exception.Message)"
+    # Under $ErrorActionPreference='Stop' a bare Write-Error is itself
+    # terminating, so `exit 1` would never run — downgrade it explicitly.
+    Write-Error "Failed: $($_.Exception.Message)" -ErrorAction Continue
     exit 1
 }
 finally {

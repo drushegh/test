@@ -4,7 +4,7 @@
 
 | | WebGLRenderer | WebGPURenderer |
 |---|---|---|
-| Browser reach | Universal | Modern Chrome/Edge/Firefox; Safari arriving — check caniuse at decision time |
+| Browser reach | Universal | Chrome/Edge, Firefox and Safari (26+, macOS/iOS) ship it by default; older devices/OS versions and some Linux/Android configs still lack it — check caniuse at decision time |
 | Shaders | GLSL (ShaderMaterial / onBeforeCompile) | **TSL** (compiles to WGSL, falls back to GLSL/WebGL2 automatically) |
 | Compute | GPGPU hacks via render targets | First-class compute shaders |
 | Default advice | Safe default for broad-reach public sites | New projects wanting TSL/compute — WebGPURenderer falls back to WebGL where unsupported |

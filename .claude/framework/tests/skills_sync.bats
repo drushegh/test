@@ -15,6 +15,25 @@ load update_helpers
   grep -q "^SKILLS_PINNED_SHA=$SKILLS_UPSTREAM_SHA" "$SVERSION"
 }
 
+@test "skills-sync --list: prints the live upstream catalogue, not just selected (TASK-135)" {
+  build_skills_upstream
+  build_skills_consumer "python"
+  run skills_sync --list
+  [ "$status" -eq 0 ]
+  # Both upstream skills appear — including rust, which is NOT in SKILLS_SELECTED:
+  # --list is ground truth, decoupled from selection and from the suggest map.
+  [[ "$output" == *"python"* ]]
+  [[ "$output" == *"rust"* ]]
+}
+
+@test "skills-sync --catalogue: alias of --list (TASK-135)" {
+  build_skills_upstream
+  build_skills_consumer "python"
+  run skills_sync --catalogue
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"rust"* ]]
+}
+
 @test "skills-sync: unselected upstream skill is NOT copied" {
   build_skills_upstream
   build_skills_consumer "python"
@@ -171,6 +190,90 @@ load update_helpers
   [[ "$output" != *"gamma-development"* ]]
 }
 
+@test "skills-sync: bundle mode (no upstream URL) sources in-repo skills/ and pins 'bundled' (Phase-B)" {
+  build_skills_upstream
+  build_skills_consumer "python"
+  # Convert to bundle mode: drop the URL, add an in-repo bundled catalogue.
+  mkdir -p "$SCONSUMER/skills/python"
+  printf -- '---\nname: python\n---\nbundled python v1\n' > "$SCONSUMER/skills/python/SKILL.md"
+  printf 'SKILLS_SELECTED="python"\n' > "$SVERSION"
+  run skills_sync
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"bundle mode"* ]]
+  grep -q "bundled python v1" "$SCONSUMER/.claude/skills/python/SKILL.md"
+  grep -q '^SKILLS_PINNED_SHA=bundled' "$SVERSION"
+}
+
+@test "skills-sync: clone mode wins even when a bundle also exists (Phase-B seam)" {
+  build_skills_upstream
+  build_skills_consumer "python"          # .skills-version HAS SKILLS_UPSTREAM_URL
+  # A bundled skills/ is ALSO present, but the configured URL must win → real sha pin.
+  mkdir -p "$SCONSUMER/skills/python"
+  printf 'bundled (should NOT be used)\n' > "$SCONSUMER/skills/python/SKILL.md"
+  run skills_sync
+  [ "$status" -eq 0 ]
+  grep -q "python skill v1" "$SCONSUMER/.claude/skills/python/SKILL.md"   # from the clone
+  grep -q "^SKILLS_PINNED_SHA=$SKILLS_UPSTREAM_SHA" "$SVERSION"           # real sha, not "bundled"
+}
+
+@test "skills-sync: no URL, no bundle → DEFAULT mode syncs the (overridable) public catalogue (Phase-B)" {
+  build_skills_upstream
+  build_skills_consumer "python"
+  printf 'SKILLS_SELECTED="python"\n' > "$SVERSION"   # no URL, and $SCONSUMER has no skills/
+  export SKILLS_DEFAULT_UPSTREAM_URL="$SKILLS_UPSTREAM"   # point the public default at the fixture
+  run skills_sync
+  [ "$status" -eq 0 ]
+  grep -q "python skill v1" "$SCONSUMER/.claude/skills/python/SKILL.md"   # default-mode clone
+  grep -q "^SKILLS_PINNED_SHA=$SKILLS_UPSTREAM_SHA" "$SVERSION"           # real sha, not "bundled"
+}
+
+@test "skills-sync: --suggest detects containers/kubernetes/sql/CI (Phase-B map additions)" {
+  build_skills_upstream
+  build_skills_consumer "python"
+  touch "$SCONSUMER/Dockerfile" "$SCONSUMER/Chart.yaml" "$SCONSUMER/schema.sql" "$SCONSUMER/Jenkinsfile"
+  run skills_sync --suggest
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"containers-development"* ]]
+  [[ "$output" == *"kubernetes-development"* ]]
+  [[ "$output" == *"sql-development"* ]]
+  [[ "$output" == *"devops-development"* ]]
+  # rtdd is now in the cross-cutting line.
+  [[ "$output" == *"read-the-damn-docs"* ]]
+}
+
+@test "skills-sync: partial sync (one refused) does NOT advance the pin (Phase-B)" {
+  build_skills_upstream
+  build_skills_consumer "python rust"
+  run skills_sync                                     # both sync, pin → v1 sha
+  [ "$status" -eq 0 ]
+  git -C "$SCONSUMER" add -A
+  git -C "$SCONSUMER" commit -qm "committed synced skills + pin"
+  # python now tracked+dirty → refused next sync.
+  echo "local tweak" >> "$SCONSUMER/.claude/skills/python/SKILL.md"
+  # Upstream advances so a CLEAN sync WOULD move the pin.
+  printf 'rust v2\n' >> "$SKILLS_UPSTREAM/rust/SKILL.md"
+  git -C "$SKILLS_UPSTREAM" add -A
+  git -C "$SKILLS_UPSTREAM" commit -qm "rust v2"
+  local new_sha
+  new_sha=$(git -C "$SKILLS_UPSTREAM" rev-parse HEAD)
+  run skills_sync
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"python: REFUSED"* ]]
+  [[ "$output" == *"rust: synced"* ]]
+  # Pin must NOT have advanced to the new sha (a refused skill is behind).
+  ! grep -q "^SKILLS_PINNED_SHA=$new_sha" "$SVERSION" || false
+  grep -q "^SKILLS_PINNED_SHA=$SKILLS_UPSTREAM_SHA" "$SVERSION"
+}
+
+@test "skills-sync: backslash path-like skill name is rejected (Phase-B name guard)" {
+  build_skills_upstream
+  # No leading dot and no forward slash, so ONLY the backslash guard can catch it.
+  build_skills_consumer 'sub\evil'
+  run skills_sync
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"plain directory names"* ]]
+}
+
 @test "skills-sync: no companion advisory when all referenced siblings are selected" {
   SKILLS_UPSTREAM="$BATS_TEST_TMPDIR/skills-upstream-comp2"
   mkdir -p "$SKILLS_UPSTREAM/alpha-development" "$SKILLS_UPSTREAM/beta-development"
@@ -185,4 +288,52 @@ load update_helpers
   run skills_sync
   [ "$status" -eq 0 ]
   [[ "$output" != *"companion skills"* ]]
+}
+
+@test "skills-sync: .skills-version is PARSED, never sourced (embedded shell does not run)" {
+  build_skills_upstream
+  build_skills_consumer "python"
+  # A hostile line appended to the committed pin file: parsing
+  # reads only allow-listed KEY=VALUE fields, so it must never execute.
+  printf 'touch "%s/PWNED"\n' "$SCONSUMER" >> "$SVERSION"
+  run skills_sync
+  [ "$status" -eq 0 ]
+  [ ! -e "$SCONSUMER/PWNED" ]
+  grep -q "python skill v1" "$SCONSUMER/.claude/skills/python/SKILL.md"
+}
+
+@test "skills-sync: the contract's example .skills-version (trailing # comments) parses correctly" {
+  build_skills_upstream
+  build_skills_consumer "python"
+  # The contract:skills-sync example lines verbatim (ECOSYSTEM.md), with the
+  # URL pointed at the local fixture: every value carries a trailing comment,
+  # which must NOT become part of the value.
+  cat > "$SVERSION" <<EOF
+SKILLS_UPSTREAM_URL=$SKILLS_UPSTREAM  # OPTIONAL — set to track a
+                                     # specific skills repo (CLONE MODE; any git-clonable URL/path
+                                     # or SSH alias). OMIT to use a vendored skills/ (BUNDLE MODE)
+                                     # or, if none, the public CCMAF catalogue (DEFAULT MODE).
+SKILLS_UPSTREAM_BRANCH=main          # required in clone mode
+SKILLS_PINNED_SHA=
+SKILLS_SELECTED="python rust"  # space-separated skill dir names to sync
+SKILLS_CHECK_INTERVAL_HOURS=24       # optional; default 24
+EOF
+  run skills_sync
+  [ "$status" -eq 0 ]
+  grep -q "python skill v1" "$SCONSUMER/.claude/skills/python/SKILL.md"
+  grep -q "rust skill v1" "$SCONSUMER/.claude/skills/rust/SKILL.md"
+  grep -q "^SKILLS_PINNED_SHA=$SKILLS_UPSTREAM_SHA" "$SVERSION"
+}
+
+@test "skills-sync: a glob character in SKILLS_SELECTED is not expanded against the cwd" {
+  build_skills_upstream
+  build_skills_consumer "python"
+  printf 'SKILLS_UPSTREAM_URL=%s\nSKILLS_UPSTREAM_BRANCH=main\nSKILLS_SELECTED="*"\n' \
+    "$SKILLS_UPSTREAM" > "$SVERSION"
+  # A cwd entry named like an upstream skill: were `*` glob-expanded against
+  # the cwd, it would become the skill name `rust` and be synced.
+  mkdir -p "$SCONSUMER/rust"
+  run skills_sync
+  [ ! -d "$SCONSUMER/.claude/skills/rust" ]
+  [ ! -d "$SCONSUMER/.claude/skills/python" ]
 }

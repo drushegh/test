@@ -46,7 +46,7 @@
   Sentinel aggregates active coverage and simulated coverage across
   templates.
 - Engineering use: identify gaps per tactic before writing new
-  detections; tender/audit use: export coverage evidence.
+  detections; audit use: export coverage evidence.
 - Tag honestly — a log-source-less technique tagged on a weak rule is
   fake coverage; the matrix is only as good as the tagging discipline.
 - ATT&CK versions update; template tags follow Microsoft's mapping —

@@ -22,8 +22,9 @@ API**, and design it to be polite, resilient and maintainable. Default stack is
 Python (httpx + BeautifulSoup/parsel for static, Playwright for dynamic,
 Scrapy when it's a real crawl).
 
-Tooling context (June 2026 — re-verify): Scrapy 2.11+ (Twisted-based; friction
-with the asyncio ecosystem — see `scrapy-framework.md`); scrapy-playwright for
+Tooling context (September 2026 — re-verify): Scrapy 2.19 (Twisted-based but
+asyncio reactor by default, so `async def` callbacks can await asyncio libraries;
+experimental reactorless mode — see `scrapy-framework.md`); scrapy-playwright for
 JS rendering inside Scrapy; Playwright (Python) for standalone dynamic scraping;
 httpx for async HTTP; selectolax/parsel/lxml for fast parsing.
 

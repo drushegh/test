@@ -21,6 +21,11 @@ Microsoft's official skills-for-fabric repo and MS Learn. The semantic
 model and report layers (DAX, TMDL, deployment of models) belong to
 power-bi-development; this skill owns the data platform: storage,
 compute, ingestion, orchestration, and administration.
+Vendor-neutral data-pipeline discipline — dbt, non-Fabric Spark,
+Airflow/Dagster/Prefect orchestration, dimensional/warehouse modelling,
+idempotent backfills and data contracts — lives in
+data-engineering-development; same discipline, this skill owns the Fabric
+platform specifics (OneLake, Fabric Spark, Direct Lake, capacities).
 
 ## Everything Is Delta in OneLake
 

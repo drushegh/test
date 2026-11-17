@@ -72,6 +72,10 @@ is the error standard — it obsoletes RFC 7807; the media type remains
   document it.
 - **Inconsistent error shapes** across endpoints — adopt `problem+json` once.
 - **200 for everything** (errors in the body) — breaks clients and proxies.
+- **Trusting `res.ok` from third-party APIs** — many return `200` with an error
+  verdict in the body; check it, normalise the payload into one total type, and
+  log the response *shape* when a join comes back empty
+  (`references/consuming-apis-and-local-dev.md`).
 - **Breaking changes shipped silently** — additive only within a version;
   signal removals with `Deprecation`/`Sunset` headers and a migration window.
 - **Offset pagination on large/changing datasets** — page drift and slow deep
@@ -108,6 +112,7 @@ Load on demand:
 - `references/openapi-contract.md` — OpenAPI 3.1/3.2 design-first, schema, examples, linting, codegen, review checklist
 - `references/auth-rate-limiting.md` — OAuth2/OIDC, API keys, scopes, 401 vs 403, rate limiting, CORS
 - `references/webhooks.md` — event delivery, HMAC signing, retries/idempotency, CloudEvents
+- `references/consuming-apis-and-local-dev.md` — integrating third-party APIs (200-with-error, shape logging, unverified params, capped pagination), `*.localhost` tenants, Hono `createApp()` factory
 
 ## Boundaries
 
@@ -116,10 +121,19 @@ Load on demand:
   `python-development`, `typescript-development`). This skill owns the design.
 - **Identity provider / OAuth server config, Entra ID app registrations** →
   `azure-development`; **auth threat model, token handling, injection** →
-  `secure-development`. This skill owns the API-surface auth *patterns*.
+  `secure-development`; **auth engineering internals** — OAuth/OIDC flow
+  selection, token validation and rotation, sessions vs tokens, SSO,
+  MFA/passkeys, authorisation models → `identity-development`. This skill
+  owns the API-surface auth *patterns* (401 vs 403, scopes, API keys, CORS).
 - **API Management / gateway provisioning** (APIM, ingress) →
   `azure-development`.
 - **Database/query design behind the API** → `sql-development`.
 - **Pipelines that publish specs or run contract tests** → `devops-development`.
-- **GraphQL/gRPC in depth** is noted at decision level here; flag a dedicated
-  skill if a task needs that depth.
+- **GraphQL in depth** — schema design, resolvers/DataLoader and N+1,
+  mutations/errors-as-data, federation, GraphQL-specific hardening →
+  `graphql-development` (this skill holds the REST-vs-GraphQL decision, then
+  routes the depth there); **gRPC in depth** — flag a dedicated skill if a
+  task needs it.
+- **Async/event-driven integration behind the API** — message brokers,
+  delivery semantics, idempotent consumers, outbox, sagas, schema registries
+  → `event-driven-development` (this skill owns the HTTP webhook edge).

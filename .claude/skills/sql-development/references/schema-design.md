@@ -50,7 +50,10 @@ array/jsonb (PG) with a justification.
   natural key the business relies on — the optimiser also uses them.
 - Foreign keys ON by default; `ON DELETE` behaviour chosen explicitly
   (`RESTRICT`/`NO ACTION` unless cascading is a designed behaviour).
-  Trusted FKs let both optimisers eliminate joins.
+  T-SQL: *trusted* FKs (created/re-enabled `WITH CHECK`) let the
+  optimiser eliminate unused joins. PostgreSQL's planner does not use
+  FKs for join elimination (it only removes unused `LEFT JOIN`s to a
+  provably unique key) — index FK columns for join/delete speed instead.
 - `CHECK` constraints for domain rules (status values, ranges,
   cross-column rules). PG: `CHECK` + lookup table or enum; enums are
   cheap but `ALTER TYPE ... ADD VALUE` has transactional quirks — a

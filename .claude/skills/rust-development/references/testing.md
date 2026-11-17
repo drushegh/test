@@ -25,7 +25,9 @@ async fn fetches_data() {
     assert!(result.is_ok());
 }
 
-// Time-dependent tests: pause the clock — instant and deterministic
+// Time-dependent tests: pause the clock — instant and deterministic.
+// Needs tokio's `test-util` feature (dev-dependency) and the default
+// current_thread flavour; paused time is not available multi-threaded.
 #[tokio::test(start_paused = true)]
 async fn test_timeout_path() {
     tokio::time::advance(Duration::from_secs(60)).await;   // no real waiting
@@ -98,6 +100,11 @@ inputs roundtrip, invalid inputs always reject.
   `#[expect(clippy::unwrap_used, reason = "test assertions")]`.
 - `#[should_panic(expected = "...")]` for panic paths.
 - Tests are independent — no shared mutable state, no order dependence.
+- **Process environment is shared state.** `cargo test` runs tests on
+  parallel threads, so `std::env::set_var`/`remove_var` in one test races
+  every other (and is `unsafe` from edition 2024 for this reason). Inject
+  config instead of reading env in the code under test, give each test its
+  own paths/ids, or use nextest (process per test) for env-dependent tests.
 - Every bug fix starts with a failing regression test.
 - Run a focused subset while iterating: `cargo nextest run module::` —
   full suite before completion.

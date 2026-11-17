@@ -98,11 +98,15 @@ sees). `TEXT("...")` macro on all literals.
 
 - Automation framework: `IMPLEMENT_SIMPLE_AUTOMATION_TEST` for unit
   tests, functional tests as level-based AFunctionalTest for gameplay;
-  run via session frontend or `-ExecCmds="Automation RunTests ..."`
-  in CI.
+  run via session frontend, or in CI via `-ExecCmds="Automation
+  RunTests ..." -TestExit="Automation Test Queue Empty" -unattended
+  -nullrhi` (without `-TestExit` the editor never quits).
 - `DECLARE_LOG_CATEGORY_EXTERN`/`DEFINE_LOG_CATEGORY` per system;
   `UE_LOG(LogMyGame, Warning, TEXT("%s"), *Name)`; `check()`/
-  `ensure()` for invariants (ensure logs without crashing shipping).
+  `ensure()` for invariants (`ensure` logs + reports a callstack
+  without crashing in development builds; in Shipping both are
+  compiled out by default — `check` doesn't even evaluate its
+  expression, use `verify` when the side effect must run).
 
 No UE-aware parser exists in most toolchains outside the engine —
 treat compile-in-editor (or UBT in CI) as the only real verification

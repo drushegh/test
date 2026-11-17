@@ -129,3 +129,77 @@ layout.
   images; prefer SVG for icons and logos.
 - Self-host fonts with `font-display: swap`, preload the display face,
   subset where possible; system font stack is a legitimate choice.
+- Variable-font packages split axes into separate CSS entry points (for
+  Fontsource, the default import carries only the weight axis — import the
+  file that includes `wdth`/`opsz` when you use `font-stretch` or optical
+  sizing; check the package's file list, verify). A missing axis falls back
+  to synthesised or default widths without any error.
+
+## Layout, Cascade and Parsing Traps
+
+Each of these renders "fine" in the happy path and fails silently.
+
+**Clipping and stacking**
+- `overflow-x: auto` (or `hidden`) forces the other axis from `visible` to
+  `auto`, so absolutely positioned popups inside a horizontally scrolling
+  row get clipped. Render the popup in a portal at `document.body` with
+  `position: fixed`, placed from the trigger's `getBoundingClientRect()` and
+  clamped to the viewport; close on outside click and Escape, not
+  `mouseleave`. The native `popover` attribute / top layer avoids the
+  clipping without a portal.
+- A portalled popup opened from inside another portalled overlay (modal,
+  drawer) can sit under that overlay's backdrop whatever its `z-index`,
+  because each portal root is its own stacking context. Portal into the open
+  overlay's subtree (or the top layer), and confirm in a real browser with
+  `document.elementFromPoint(x, y)` at the popup's centre — jsdom cannot see
+  this.
+- `transform`, `filter`, `opacity < 1`, `will-change` and `contain` create
+  stacking contexts and containing blocks; a `position: fixed` child of a
+  transformed ancestor is positioned relative to that ancestor.
+- `translate(50%)` is relative to the element's own box, not the parent;
+  use `left`/`top` (or `inset`) percentages for parent-relative placement.
+
+**Responsive**
+- A viewport `@media` breakpoint is blind to sidebars and split panes: the
+  main column can be 500px wide on a 1280px viewport. Size components with
+  container queries or `repeat(auto-fit, minmax(…))`, and capture at the
+  in-between widths, not only the standard breakpoints.
+- Responsive grids need an explicit base (`grid-cols-1` / a single-column
+  default) — without it, `truncate`/`nowrap` children force overflow on
+  mobile. Pair `truncate` with `min-width: 0` on the grid/flex child.
+
+**Custom properties and theming**
+- Custom properties inherit; they are not specificity contests. A token
+  re-declared on a descendant (a scoped screen, a third-party widget root)
+  wins over a `:root` or `.dark` theme block by proximity. When a theme
+  switch misses a screen, look for local re-declarations and mirror the
+  theme block on that scope.
+- `var(--token, fallback)` hides typos and stale names — an undefined token
+  silently renders the fallback. Grep for every `var(--x, …)` fallback copy
+  when retuning a token: fallbacks paint before a post-mount theme provider
+  runs, so a stale fallback flashes the old value.
+- Changing the default theme means updating the pre-hydration floors too —
+  inline styles or a blocking script in `index.html`, and fallback values in
+  the base stylesheet — or first paint flashes the old theme.
+- `light-dark()` is not accepted as the value of a registered (`@property`
+  with `syntax: "<color>"`) custom property in Chromium (observed; verify
+  against current engines). Keep `light-dark()` on unregistered tokens, or
+  switch registered tokens under a `.dark` / `color-scheme` selector.
+- Native `<select>` options can render dim or low-contrast in Chromium dark
+  mode even with `color-scheme: dark`; give `option` an explicit background
+  and colour from your tokens (verify per browser).
+- Customisable select: Chromium's default `::picker(select)` uses
+  `position-try-order: most-block-size`, so the picker can open over its
+  own label; set `position-try-order: normal` with explicit
+  `position-try-fallbacks` when placement matters (experimental; verify).
+
+**Parsing**
+- A unitless `0` inside a length `calc()` (`calc(0 + 1rem)`) is a number,
+  not a length — the whole declaration is invalid and dropped. Write `0px`.
+- CSS comments do not nest: a literal `*/` inside a comment ends it early
+  and the rest is parsed as garbage, often swallowing following rules.
+- When generating CSS from code, use raw strings: an escape such as `"\1"` in
+  a non-raw Python string emits a control character that invalidates
+  declarations.
+- `text-shadow` paints over text that uses `background-clip: text` with a
+  transparent fill; use `filter: drop-shadow()` on a wrapper instead.

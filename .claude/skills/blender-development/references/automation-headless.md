@@ -4,10 +4,10 @@
 
 ```bash
 # Run a script against a file, headless
-blender -b assets/scene.blend -P scripts/process.py -- --preset web
+blender -b assets/scene.blend --python-exit-code 1 -P scripts/process.py -- --preset web
 
 # Fresh file, pure procedural generation
-blender -b -P scripts/generate.py -- --out /exports
+blender -b --python-exit-code 1 -P scripts/generate.py -- --out /exports
 
 # Render: frame / animation with overrides
 blender -b scene.blend -o //renders/frame_#### -F PNG -f 12
@@ -21,8 +21,12 @@ blender --command extension build
 - `-b` (background) first; argument ORDER MATTERS (`-P` runs when
   encountered); everything after `--` reaches the script via
   `sys.argv` (parse with argparse on `sys.argv[sys.argv.index('--')+1:]`).
-- Exit codes: uncaught Python exceptions set non-zero — let them
-  propagate for CI; print structured progress to stdout for logs.
+- Exit codes: by default an uncaught exception in a `-P` script only
+  prints a traceback — Blender carries on and exits **0**
+  (`--python-exit-code` defaults to 0 = disabled). For CI pass
+  `--python-exit-code 1` **before** `-P` (order matters), or wrap the
+  script body in try/except → `sys.exit(1)`. Print structured progress
+  to stdout for logs.
 
 ## Headless script discipline
 
@@ -50,6 +54,7 @@ manifest = json.load(open("assets/manifest.json"))
 for asset in manifest["assets"]:
     result = subprocess.run([
         "blender", "-b", asset["blend"],
+        "--python-exit-code", "1",          # else exceptions exit 0
         "-P", "scripts/export_one.py", "--",
         "--object", asset["object"],
         "--out", asset["out"],
@@ -68,7 +73,9 @@ script stays dumb: parse args, load/select, export, exit.
 - Containerised Blender (official images / apt in CI) for
   reproducible versions — pin the exact version (API drift!).
 - Pipelines: validate extensions, run bpy unit tests
-  (`blender -b -P run_tests.py` wrapping unittest/pytest-in-Blender),
+  (`blender -b --python-exit-code 1 -P run_tests.py` wrapping
+  unittest/pytest-in-Blender — and have the runner `sys.exit(1)` on
+  test failures, which aren't exceptions),
   regenerate exports on asset changes, diff file sizes/budgets
   against thresholds (`threejs-development` budget gates).
 - Render farms: frame-range sharding (`-s/-e` per node) is the

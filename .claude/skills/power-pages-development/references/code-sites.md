@@ -31,6 +31,29 @@ Angular's compiled path is `dist/<project>/browser`; React/Vue/Astro use
 `dist`. Same environment-confirmation discipline as any deployment:
 `pac org who` before upload.
 
+**Prerequisite: unblock the bundle's file types.** Many environments list
+`js` (and often `svg`) in **Blocked Attachments** (Power Platform admin
+center → environment → Settings → Product → Privacy + Security; stored
+in `organization.blockedattachments`). Uploads then fail with
+"The attachment is either not a valid type or is too large"
+(`AttachmentBlocked`, `0x80043e09`) — or, from `upload-code-site`, an
+opaque `PortalFileContentUploadFailed` on some files and not others, so it
+looks intermittent. Check the setting before the first upload and
+remove every extension your build emits.
+
+**Going live.** Uploaded sites start inactive and private; reactivate in
+Power Pages, then set visibility. Developer-environment sites can't be
+made public at all, and a tenant governance control (PPAC → Manage →
+Power Pages → Governance controls → "Set site visibility to public access
+for non-production sites", default **None**) blocks making any
+non-production site public — the maker sees "Access restricted". Ask the
+tenant admin early, or plan a private site with authenticated access for
+demos and test.
+
+Client-side routing (`BrowserRouter` and equivalents) survives a hard
+refresh on a deep link — the platform serves the SPA entry point — so
+hash routing isn't needed (observed; verify on your site).
+
 ## User context and auth
 
 Authenticated user info is exposed on the global portal object:

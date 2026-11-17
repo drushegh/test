@@ -7,7 +7,7 @@
 # .framework-version); plain git@github.com fails publickey for this account.
 SKILLS_UPSTREAM_URL=git@github.com-personal:drushegh/CCMAF---Skills.git
 SKILLS_UPSTREAM_BRANCH=main
-SKILLS_PINNED_SHA=b35e530f698a714a786549af30209506571a9355
+SKILLS_PINNED_SHA=9df1719101571e14682c32f7093521c12357a578
 SKILLS_LAST_CHECKED=2026-06-20T00:41:35Z
 SKILLS_CHECK_INTERVAL_HOURS=24
 # This is a test repo — every catalogue skill is selected on purpose.

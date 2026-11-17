@@ -35,7 +35,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
 ```
 
 Higher-level alternative (jezweb style): expose a domain-shaped API
-(`electron.auth.startOAuth(...)`, `electron.app.getVersion()`) instead of
+(`electronAPI.auth.startOAuth(...)`, `electronAPI.app.getVersion()`) instead of
 generic invoke — smaller, self-documenting surface. Either way:
 
 ```typescript
@@ -58,8 +58,12 @@ export function useElectron() {
 }
 ```
 
-Always check `window.electron?.x` exists — components can render before
-preload completes.
+The guard is for running the renderer in a plain browser during dev —
+not a timing race: the preload runs before any page script, so
+`window.electronAPI` is either there from the first render or the preload
+failed (wrong path, preload threw, ESM preload under `sandbox: true`, or
+an `exposeInMainWorld` name that doesn't match what the renderer reads).
+Pick one global name (`electronAPI` here) and use it everywhere.
 
 ## Main-Process Handlers — validate everything
 
@@ -83,13 +87,17 @@ minimum data needed (session → `{ user }`, not tokens).
 
 ## Credentials
 
-OS keychain via `keytar` (native module — see native-modules.md) or
-Electron's `safeStorage`. Pattern: store in keychain, load into
-`process.env` at startup for main-process consumers, expose
-get/set/delete over validated IPC. Never plaintext files, never
-localStorage, never hardcoded `encryptionKey` strings on electron-store —
-derive (`machineIdSync().slice(0, 32)`) or encrypt the value with
-safeStorage first.
+Use Electron's built-in `safeStorage` (`encryptString`/`decryptString`,
+backed by Keychain on macOS, DPAPI on Windows, libsecret/kwallet on
+Linux — check `isEncryptionAvailable()`, and on Linux
+`getSelectedStorageBackend()` for the `basic_text` fallback). `keytar`
+is archived (unmaintained since 2022) — don't add it to new apps; migrate
+existing uses. Pattern: persist only the safeStorage ciphertext, decrypt
+in main on demand, expose get/set/delete over validated IPC. Never
+plaintext files, never localStorage. electron-store's `encryptionKey` is
+**not** a security control (its own docs say so) — a hardcoded key or
+one derived from the machine ID (`machineIdSync()`) is recomputable by
+any local process; encrypt the value with safeStorage instead.
 
 ## OAuth via Custom Protocol
 

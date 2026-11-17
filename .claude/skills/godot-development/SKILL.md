@@ -14,8 +14,9 @@ description: >-
 Standards for Godot 4.x. Source: a5c-ai/babysitter godot skill set
 (saved in Reference skills) + official docs conventions. **Current
 stable June 2026: 4.6.x — 4.6 (Jan 2026) made Jolt physics the
-default**; 4.5 was Sep 2025. Verify the project's pinned version —
-minor releases move features; don't quote "latest" from this file.
+default**; 4.5 was Sep 2025. By Oct 2026 the official "stable" docs
+track 4.7 (verify). Verify the project's pinned version — minor
+releases move features; don't quote "latest" from this file.
 
 **Verification caveat: GDScript has no sandbox parser** — code blocks
 get structural checks only; the Godot editor (or `godot --check-only
@@ -53,6 +54,20 @@ get structural checks only; the Godot editor (or `godot --check-only
    `free()`) from gameplay; deferred calls
    (`call_deferred`/`set_deferred`) when mutating physics state
    mid-callback.
+9. **Import before you run anything headless.** The `.godot/` cache
+   (imported assets AND the global `class_name` registry) is not in
+   git. On a fresh clone, a copied project, after adding a
+   `class_name` script, or after editing an `.import` file, run
+   `godot --headless --path <project> --import` first — otherwise
+   textures, imported scenes and `class_name` globals are missing and
+   the errors look like code bugs. Raised independently by four
+   projects; it is the most common headless false alarm.
+10. **A headless run is not evidence until it can fail.** Wrap every
+    `godot --headless -s …` / test run in a timeout (a script error
+    can hang it forever), grep the output for `SCRIPT ERROR` /
+    `ERROR:`, and pin expected script/test counts — GUT can print
+    "All tests passed!" after silently skipping scripts that failed to
+    parse. Recipes: `references/headless-testing-ci.md`.
 
 ## GDScript vs C# (decision)
 
@@ -81,7 +96,8 @@ scope. Details: `references/csharp-interop.md`.
    (`references/resources-export.md`).
 5. Physics/movement per body type (`references/physics-2d-3d.md`).
 6. Test: GUT or gdUnit4 unit tests for logic; scene runner tests for
-   integration; headless `godot --headless` in CI.
+   integration; headless `godot --headless` in CI — `--import` first,
+   timeout always, counts pinned (`references/headless-testing-ci.md`).
 7. Export: presets per platform + export templates version-matched
    to the editor; automate via CI
    (`references/resources-export.md`).
@@ -107,6 +123,17 @@ scope. Details: `references/csharp-interop.md`.
 - UI: Control anchors/containers ignored in favour of absolute
   positions — breaks on every resolution; learn the container
   system.
+- Silent `.tscn`/signal traps: `groups = [...]` written as a property
+  line is ignored (groups go in the `[node … groups=[…]]` header); a
+  signal/callable argument-count mismatch only errors at emit time
+  ("Error calling from signal"). A clean boot proves neither.
+- Changing physics state inside `body_entered`/`area_entered` →
+  "Can't change this state while flushing queries" — use
+  `set_deferred("monitoring", false)` / `add_child.call_deferred(n)`
+  (set the position before the deferred add).
+- `JSON.parse_string` yields every number as `float`: check
+  `v == floorf(v)` and the range before `int()` (ints beyond 2^53 lose
+  precision).
 
 ## References
 
@@ -117,11 +144,15 @@ scope. Details: `references/csharp-interop.md`.
 | `references/csharp-interop.md` | Godot C# specifics and interop |
 | `references/physics-2d-3d.md` | Bodies, Jolt, collision design, movement |
 | `references/resources-export.md` | Custom Resources, data-driven design, export/CI |
+| `references/headless-testing-ci.md` | Any headless run, GUT/gdUnit4 in CI, smoke boots, self-tests, perf probes |
 
 ## Boundaries with sibling skills
 
 - Asset authoring/import conventions → `blender-development`
   (glTF straight into Godot).
+  Kenney CC0 kits (external colormap, scale, facing) →
+  `kenney-asset-integration`. Movement/jump/camera *feel* →
+  `game-feel`; MCP-driven run loop → `godot-mcp-workflow`.
 - Alternative engines → `unity-development`,
   `unreal-engine-development`; browser-native 3D →
   `threejs-development`.

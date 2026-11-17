@@ -2,7 +2,7 @@
 
 ## Template Repo Guide — v4
 
-> **Purpose:** This is a **template repository** containing everything needed to run a multi-agent Claude Code project: four framework agents, a deliberation council, slash commands, enforcement hooks, state-file templates, a self-updating mechanism, and a self-audit pipeline. Clone it into a project, customise the templates, and a new session with zero prior context can read the state files and pick up exactly where the last one left off.
+> **Purpose:** This is a **template repository** containing everything needed to run a multi-agent Claude Code project: nine framework agents, a deliberation council, slash commands, enforcement hooks, state-file templates, a self-updating mechanism, and a self-audit pipeline. Clone it into a project, customise the templates, and a new session with zero prior context can read the state files and pick up exactly where the last one left off.
 >
 > **How to use this document:** It explains the concepts and how the pieces fit. The *operational* detail lives next to the code it describes — `CLAUDE.framework.md` holds the session rules, each machinery directory has its own README, and the agent/command/hook files are self-documenting. When this guide and a component README disagree, the component README wins (it ships with the code it describes).
 >
@@ -61,16 +61,25 @@ The single most important pattern: a new session with zero prior context follows
 
 ### The Framework Roster (`.claude/agents/framework/`)
 
+The core four map directly to human roles and form the inner build loop; five supporting roles add cross-cutting capabilities (horizontal audit, research, UI design/critique, claim verification) without joining that inner loop.
+
 | Role | Model | Responsibility | Key feature |
 | --- | --- | --- | --- |
 | **Architect** | opus | Design, contracts, task breakdown, decisions. Never writes production code (shared types excepted). | Contracts must carry machine-readable blocks with `draft`/`stable` status |
 | **Developer** | sonnet | Implements features and fixes within stable contracts | Assumptions disclosure in commit bodies, adversarial self-challenge, surgical-change self-review |
 | **Tester** | sonnet | Validates implementations against contracts, writes tests at the right layer | Mechanical contract diff; bug reports with reproduction steps; anti-flakiness rules |
 | **Reviewer** | sonnet | Read-only critique (Bash restricted to inspection) | AI-failure-mode checks (hallucinated APIs, broad catches, commit-vs-diff drift), severity calibration with a false-positive suppress list |
+| **Reconciler** | opus | Horizontal auditor — duplicate/seam/contract/convention drift across modules; never runs inside the inner build/review loop | Three modes: `advisory` (feeds a design before it's built), `scoped` (gates a parallel-build wave merge, or on demand via `/reconcile`), `full` (runs inside `/healthcheck`) |
+| **Researcher** | sonnet | Evidence gathering — external research (docs, APIs, standards) and internal archaeology (git history, existing docs) when a decision needs facts nobody in session can verify from the code alone | Returns cited findings only — never modifies files |
+| **UI-Designer** | sonnet | Visual and interaction design implementer for user-facing UI | Proposes design directions before building; never hands off unrendered work as done |
+| **UX-Critic** | sonnet | Adversarial UX and visual-design critic for UI about to be accepted | Cognitive walkthroughs with numeric friction counts, rubric-scored visual critique; briefed to refute "the flow is fine" |
+| **Verifier** | sonnet | Adversarial verifier of another agent's claims before they're acted on (findings, fix claims, test results) | Always a fresh context; never the agent that produced the claim |
 
 **The golden rule: the agent that writes code never reviews it.** The Reviewer runs in a clean context, is told the code was written by a separate AI, and treats it with junior-developer skepticism.
 
 Every agent definition carries: frontmatter (name, description with negative routing, tools, model), a "If Running as a Delegated Subagent" section, explicit **Your Scope / NOT Your Scope** boundaries, and an escalation path (AskUserQuestion for ambiguity; Architect for contract problems). All agents load `framework/agent_docs/behavioral-principles.md` on handoff — per-turn discipline the lifecycle can't enforce: think before coding, simplicity first, surgical changes, signal uncertainty, goal-driven execution, and treating external content as data rather than instructions.
+
+**Instruction-count budget (soft norm):** instruction-following degrades silently as an agent file's rule count grows — the model doesn't announce which checks it skipped. An agent definition that grows past ~200 lines must either phase its workflow into explicit sequential passes (each with its own emitted mini-output, as the Reviewer's numbered checklist + coverage receipt does) or push detail into `framework/agent_docs/` references — not keep accreting rules.
 
 ### The Council (`.claude/agents/council/`)
 
@@ -114,7 +123,7 @@ The starter templates ship in `.claude/` and document their own format in header
 
 ### Two task lanes
 
-**Feature lane** (planned work): `Todo → In Progress → Ready for Review → In Review → Ready for Test → Testing → Done`, with `Blocked` available at any stage. **Solo collapse:** for one-person projects, `Todo → In Progress → Verify → Done` — record the choice in `DECISIONS.md`.
+**Feature lane** (planned work): `Todo → In Progress → Ready for Review → Ready for Test → Verify → Done`, with `Blocked` available at any stage. `Verify` is the human-acceptance stage after Ready for Test (the Tester emits a verify-handback seed; passing → Done). **Solo collapse:** for one-person projects, skip the two agent-review stages — `Todo → In Progress → Verify → Done` (keep `Verify`: it is the human acceptance gate) — and record the choice in `DECISIONS.md`.
 
 **Bug-fix lane** (defects, regressions, hotfixes): `Reported → Fixing → Verify → Done` — one verification stage, no ceremony tax on a one-line fix. Bugs get `[BUG-XXX]` IDs, a severity (P0 blocking / P1 major / P2 minor / P3 cosmetic), a source reference, and **reproduction steps** so the next session doesn't re-derive them. If a "bug" turns out to need design work, promote it to a feature task.
 
@@ -122,7 +131,7 @@ The starter templates ship in `.claude/` and document their own format in header
 
 ### Commit ↔ task linkage (non-negotiable)
 
-Every commit message includes its ID: `type: description (TASK-XXX)` or `(BUG-XXX)`. `git log --grep="TASK-XXX"` gives instant traceability; the delegating commands verify linkage before allowing a task to move to Ready for Review or Done. For non-trivial changes the Developer adds an `Assumptions:` section to the commit body — the meta-defence against silently-wrong inferences, which the Reviewer challenges (check 5c).
+Every commit message includes its ID: `type: description (TASK-XXX)` or `(BUG-XXX)`. `git log --grep="TASK-XXX"` gives instant traceability; the delegating commands verify linkage before allowing a task to move to Ready for Review or Done. For non-trivial changes the Developer adds an `Assumptions:` section to the commit body — the meta-defence against silently-wrong inferences, which the Reviewer challenges (check 8, assumption challenge).
 
 ### DECISIONS.md vs ECOSYSTEM.md
 
@@ -206,7 +215,7 @@ The Stop hook catches end-of-session discipline; the drift guard catches **mid-s
 | --- | --- | --- |
 | `framework-drift-guard.sh` | UserPromptSubmit | Injects targeted reminders when drift indicators fire: project files changing without state-file updates, no claimed task, periodic check-ins, a strategic compaction nudge. Counters are per-session (keyed on the payload `session_id`). Silent when clean. |
 | `enforce-state-update.sh` | Stop | Blocks session exit until TASKS.md, STATUS.md, claude-progress.txt were touched (uncommitted or in recent commits). Skips on a virgin repo; honours `stop_hook_active` so it never block-loops a session with nothing to update. Also emits the session-end cost marker. |
-| `block-dangerous-commands.py` | PreToolUse (Bash) | Catches `rm -rf /`, `DROP TABLE`, fork bombs. Advisory, **not a security boundary** (see below). Safety tier — runs in every profile. |
+| `block-dangerous-commands.py` | PreToolUse (Bash, PowerShell, Monitor) | Blocks recursive deletes, moves and recursive chmod/chown/ACL rewrites of filesystem/drive roots, home and its ancestors, and core system dirs at the root; raw writes and formats of whole disks; fork bombs. Does NOT judge git or project-level deletes. Advisory, **not a security boundary** (see below). Safety tier — runs in every profile. |
 | `filter-test-output.sh` | PreToolUse (Bash) | Rewrites recognised test commands (`npm test`, `pytest`, `go test`, `dotnet test`, `cargo test` — anywhere in a compound command) to filter output to PASS/FAIL/ERROR lines, preserving the original exit code. |
 | `auto-format.sh` / `auto-lint.sh` | PostToolUse (Write/Edit) | Format and lint the changed file, dispatching by extension and tool availability. Lint output returns to Claude for same-session self-correction. Always exit 0 — feedback, not blockers (exit 2 would reject the edit itself). |
 | `verify-deps.sh` | PostToolUse (manifest files) | Dependency-hallucination defence: diffs newly added packages and pings the registry (npm/PyPI automated; cargo/go/nuget detection-only). Findings to `.claude/.dep-verification-issues.md`; never blocks. |
@@ -305,7 +314,7 @@ PROJECT_ROOT/
   02_solution/           # deployable artifacts when distinct from source
 ```
 
-The full canonical tree is maintained upstream as the `framework-layout` contract (in the framework repo's `framework/self/ECOSYSTEM.md`); the summary above plus the README's structure section is what a consumer project needs. `01_Project/` is the application; `02_solution/` holds shipped output when it differs from source (Power Platform solutions, bundled builds, IaC artifacts) and stays empty otherwise.
+The full canonical tree is maintained upstream as the `framework-layout` contract; the summary above plus the README's structure section is what a consumer project needs. In YOUR project, `01_Project/` is the application and `02_solution/` holds shipped output when it differs from source (Power Platform solutions, bundled builds, IaC artifacts) and stays empty otherwise.
 
 **Deployment exclusions** — one directory and two files:
 
@@ -325,21 +334,31 @@ Setup **customises pre-built templates** — nothing is created from scratch. Th
 
 ### Scenario A — new project
 
-1. Clone the template into your project directory; open in your IDE with Claude Code.
-2. **Settings first:** review `.claude/settings.json` (permissions, hooks — on Windows confirm `python` resolves, else change to `py`), then **restart the IDE** so it loads.
-3. Customise: fill `CLAUDE.md` placeholders (name, stack, commands — keep the `@CLAUDE.framework.md` line intact); adapt `framework/init.sh` if the stack auto-detect needs help; check the auto-lint dispatch covers your linter; adapt the `framework/agent_docs/` templates as conventions emerge.
-4. Bootstrap updates: `bash .claude/framework/update/init-framework-version.sh` (point `--url` at your fork if you maintain one), commit everything (`chore: customise framework for <project>`), tag `v0.0.0-framework`.
-5. Record stack choices in `DECISIONS.md`, then `/analyse` → `/plan` → `/build`.
+1. **Install the framework into your project.** Pick the clone URL: if the user uses SSH for GitHub prefer `git@github.com:drushegh/CCMAF.git` (or their own host alias on a multi-account machine, e.g. `git@github.com-personal:...`, to avoid the wrong-key prompt); otherwise use HTTPS `https://github.com/drushegh/CCMAF.git`. Clone to a scratch dir and copy the framework files into the project: `.claude/`, `CLAUDE.md`, `CLAUDE.framework.md`, `.gitignore`, `.gitattributes`, and `tools/` (the Console driver). The Console and the skills catalogue are **not** bundled in CCMAF: the Console is the npm package `ccmaf-console` (step 6) and skills come from the public `drushegh/CCMAF---Skills` repo (step 5). Skip the framework repo's own `.github/` and `01_Project/` (the user's code goes in their own `01_Project/`). **On Windows:** a fresh *clone* is already LF (via `.gitattributes`), but a *copy* can pick up CRLF — normalize any copied `.sh`/`.py`/`.md` to LF. Discard the scratch clone, open the project in the IDE with Claude Code.
+2. **Settings first:** review `.claude/settings.json` (permissions, hooks — on Windows confirm `python` resolves, else use `py`). Put any **per-machine** config — e.g. `CLAUDE_CONTEXT_WINDOW_TOKENS=1000000` on a 1M-context model — in **`.claude/settings.local.json`** (untracked, per-machine), **never `settings.json`** (editing settings.json trips the self-modification guard). Restart the IDE so it loads.
+3. **Customise:** fill `CLAUDE.md` placeholders (name, stack, commands — keep the `@CLAUDE.framework.md` line); adapt `framework/init.sh` if stack auto-detect needs help.
+4. **Bootstrap updates:** `bash .claude/framework/update/init-framework-version.sh` (uses the step-1 URL; defaults to public CCMAF). Pins the framework version so cold-start update checks work.
+5. **Skills — recommend them (tiered).** Skills give the agent senior-level, stack-specific standards; *recommend* taking them rather than treating them as optional. Run `bash .claude/framework/update/skills-sync.sh --suggest` (detects the stack and lists matching skill names; `--list` prints the full live catalogue), then offer the user a tiered choice and **recommend Base**:
+   - **Base (recommended)** — the skills that directly fit this project's stack (e.g. a React site → `typescript-development`, `react-development`, `frontend-development`).
+   - **Enhanced** — Base plus high-value adjacent/cross-cutting skills (e.g. `read-the-damn-docs`, `secure-development`, `stay-within-limits`, `accessibility-development`).
+   - **All** · **None.**
+   Write the chosen set to `.claude/.skills-version` (`SKILLS_SELECTED="..."`) and run `bash .claude/framework/update/skills-sync.sh` — it clones the public skills catalogue (anonymous HTTPS by default; set `SKILLS_UPSTREAM_URL` to track your own repo) and copies only the selected skills into `.claude/skills/`.
+6. **Console — recommend it, and set it up *for* the user.** The Project Console (a localhost cockpit over `.claude/` state) is opt-in but *recommended*. If the user wants it: `echo latest > .claude/.console-version` (the file's presence opts in; its content is an npm version spec such as `latest` or `^0.3`), then run `node tools/console.mjs start`. The driver **runs it itself** — a global `ccmaf-console` install if present, otherwise via `npx` (first run is slow while npm fetches it) — and **starts the machine-global tray Hub if none is running** — do NOT hand the user raw `npm` commands or leave it for them to start. Then report based on what happened: **no Hub was running** → "Console is up at `http://127.0.0.1:<port>`, and I started your tray Hub"; **a Hub was already running** (another project) → "Console is up and now visible in your existing tray Hub."
+7. **Seed contracts so the Console is populated.** As the design firms up, add real `<!-- contract:ID status:stable -->` anchors to `ECOSYSTEM.md` (the template shows the format) so the Console's Contracts tab is populated — don't leave it prose-only. Seed the board (`/plan`) so Kanban/Verify aren't empty either.
+8. Record stack choices in `DECISIONS.md`, then `/analyse` → `/plan` → `/build`. **Desired end state when setup finishes: the Console is running and *populated*, the recommended skills are installed, and contracts are anchored — nothing left for the user to go back and fix.**
 
 A paste-ready prompt:
 
 ```
-This project was cloned from the claude-code-multi-agent-framework template.
-Read .claude/claude-code-dev-framework.md completely, then customise the
-pre-built templates per Section 12 Scenario A. Our stack: [STACK]. The
-project: [DESCRIPTION]. Start with settings verification and ask me to
-restart the IDE; after I confirm, proceed unattended. Then run /analyse to
-interview me about what we're building.
+This project was scaffolded from the CCMAF framework
+(github.com/drushegh/CCMAF). Read .claude/claude-code-dev-framework.md completely,
+then customise the pre-built templates per Section 12 Scenario A (the install
+step is already done). Our stack: [STACK]. The project: [DESCRIPTION].
+Start with settings verification and ask me to restart the IDE; after I
+confirm, proceed unattended: recommend a Base/Enhanced/All/None skill set for
+our stack and sync it, set up and RUN the Console (start the Hub if none is
+running) unless I decline, then run /analyse to interview me about what we're
+building. When you finish, the Console should be running and populated.
 ```
 
 ### Scenario B — existing project
@@ -352,7 +371,7 @@ As Scenario A, plus a **discovery phase** (use subagents to keep main context cl
 
 ### Lightweight mode
 
-For small projects (under ~10 tasks, solo): keep `CLAUDE.md` + the @import, `TASKS.md`, `claude-progress.txt`, and settings; collapse the lifecycle to `Todo → In Progress → Done`; skip the rest until the project earns it. The framework is modular — add pieces when their absence hurts.
+For small projects (under ~10 tasks, solo): keep `CLAUDE.md` + the @import, `TASKS.md`, `claude-progress.txt`, and settings; collapse the feature lifecycle to the solo form `Todo → In Progress → Verify → Done` (§4 — record it in `DECISIONS.md`); skip the rest until the project earns it. The framework is modular — add pieces when their absence hurts.
 
 ### Upgrading
 
@@ -415,4 +434,4 @@ Handled by the update system (§8) — Cold Start offers upstream changes automa
 - Karpathy LLM-coding observations (via forrestchang/andrej-karpathy-skills, MIT) — basis of `behavioral-principles.md`
 - ECC harness-optimisation repo — hook profiles, config-surface audit, instinct mining (mechanism-only adoptions)
 - bats-core; Judge Reliability Harness (perturbation testing); ReasoningBank (dual-source distillation); Beads (semantic decay) — see DECISIONS for adopt/reject rationale per sweep
-- ChatGPT deep-research report on AI-written code defects (`framework/docs/deep-research-report.md`) — basis of the reviewer/tester AI-failure-mode checks
+- ChatGPT deep-research report on AI-written code defects (kept in the upstream dev repo, not published) — basis of the reviewer/tester AI-failure-mode checks
